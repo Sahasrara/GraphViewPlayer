@@ -9,7 +9,7 @@ using System.Reflection;
 using System.Runtime.CompilerServices;
 using UnityEngine;
 
-namespace UnityEditor.Experimental.GraphView
+namespace GraphViewPlayer
 {
     // types of port to adapt
     public class PortSource<T>

@@ -8,7 +8,7 @@ using UnityEngine;
 using UnityEngine.UIElements;
 using UnityEngine.UIElements.StyleSheets;
 
-namespace UnityEditor.Experimental.GraphView
+namespace GraphViewPlayer
 {
     public class Port : GraphElement
     {
@@ -95,68 +95,6 @@ namespace UnityEditor.Experimental.GraphView
 
         public Capacity capacity { get; private set; }
 
-        private string m_VisualClass;
-        public string visualClass
-        {
-            get { return m_VisualClass; }
-            set
-            {
-                if (value == m_VisualClass)
-                    return;
-
-                // Clean whatever class we previously had
-                if (!string.IsNullOrEmpty(m_VisualClass))
-                    RemoveFromClassList(m_VisualClass);
-                else
-                    ManageTypeClassList(m_PortType, RemoveFromClassList);
-
-                m_VisualClass = value;
-
-                // Add the given class if not null or empty. Use the auto class otherwise.
-                if (!string.IsNullOrEmpty(m_VisualClass))
-                    AddToClassList(m_VisualClass);
-                else
-                    ManageTypeClassList(m_PortType, AddToClassList);
-            }
-        }
-
-        private Type m_PortType;
-        public Type portType
-        {
-            get { return m_PortType; }
-            set
-            {
-                if (m_PortType == value)
-                    return;
-
-                ManageTypeClassList(m_PortType, RemoveFromClassList);
-
-                m_PortType = value;
-                Type genericClass = typeof(PortSource<>);
-                Type constructedClass = genericClass.MakeGenericType(m_PortType);
-                source = Activator.CreateInstance(constructedClass);
-
-                if (string.IsNullOrEmpty(m_ConnectorText.text))
-                    m_ConnectorText.text = m_PortType.Name;
-
-                ManageTypeClassList(m_PortType, AddToClassList);
-            }
-        }
-
-        private void ManageTypeClassList(Type type, Action<string> classListAction)
-        {
-            // If there's an visual class explicitly set, don't set an automatic one.
-            if (type == null || !string.IsNullOrEmpty(m_VisualClass))
-                return;
-
-            if (type.IsSubclassOf(typeof(Component)))
-                classListAction("typeComponent");
-            else if (type.IsSubclassOf(typeof(GameObject)))
-                classListAction("typeGameObject");
-            else
-                classListAction("type" + type.Name);
-        }
-
         public EdgeConnector edgeConnector
         {
             get { return m_EdgeConnector; }
@@ -207,14 +145,6 @@ namespace UnityEditor.Experimental.GraphView
             get
             {
                 return m_Connections.Count > 0;
-            }
-        }
-
-        public virtual bool collapsed
-        {
-            get
-            {
-                return false;
             }
         }
 
@@ -293,6 +223,22 @@ namespace UnityEditor.Experimental.GraphView
             UpdateCapColor();
         }
 
+        public virtual bool IsConnected(Port other)
+        {
+            foreach (Edge e in m_Connections)
+            {
+                if (direction == Direction.Output)
+                {
+                    if (e.input == other)  return true;
+                }
+                else
+                {
+                    if (e.output == other) return true;
+                }
+            }
+            return false;
+        }
+
         private class DefaultEdgeConnectorListener : IEdgeConnectorListener
         {
             private GraphViewChange m_GraphViewChange;
@@ -345,10 +291,10 @@ namespace UnityEditor.Experimental.GraphView
         }
 
         // TODO This is a workaround to avoid having a generic type for the port as generic types mess with USS.
-        public static Port Create<TEdge>(Orientation orientation, Direction direction, Capacity capacity, Type type) where TEdge : Edge, new()
+        public static Port Create<TEdge>(Orientation orientation, Direction direction, Capacity capacity) where TEdge : Edge, new()
         {
             var connectorListener = new DefaultEdgeConnectorListener();
-            var port = new Port(orientation, direction, capacity, type)
+            var port = new Port(orientation, direction, capacity)
             {
                 m_EdgeConnector = new EdgeConnector<TEdge>(connectorListener),
             };
@@ -356,29 +302,34 @@ namespace UnityEditor.Experimental.GraphView
             return port;
         }
 
-        protected Port(Orientation portOrientation, Direction portDirection, Capacity portCapacity, Type type)
+        protected Port(Orientation portOrientation, Direction portDirection, Capacity portCapacity)
         {
             // currently we don't want to be styled as .graphElement since we're contained in a Node
             ClearClassList();
 
-            var tpl = EditorGUIUtility.Load("UXML/GraphView/Port.uxml") as VisualTreeAsset;
+            // Label
+            m_ConnectorText = new Label();
+            m_ConnectorText.AddToClassList("port-label");
+            this.Add(m_ConnectorText);
 
-            tpl.CloneTree(this);
-            m_ConnectorBox = this.Q(name: "connector");
-            m_ConnectorText = this.Q<Label>(name: "type");
+            // Cap
+            m_ConnectorBoxCap = new();
+            m_ConnectorBoxCap.AddToClassList("port-connector-cap");
 
-            m_ConnectorBoxCap = this.Q(name: "cap");
+            // Box
+            m_ConnectorBox = new();
+            m_ConnectorBox.AddToClassList("port-connector-box");
+            m_ConnectorBox.Add(m_ConnectorBoxCap);
+            this.Add(m_ConnectorBox);
 
             m_Connections = new HashSet<Edge>();
 
             orientation = portOrientation;
             direction = portDirection;
-            portType = type;
             capacity = portCapacity;
 
             AddToClassList("port");
-            AddToClassList(portDirection.ToString().ToLower());
-            AddStyleSheetPath("StyleSheets/GraphView/Port.uss");
+            AddToClassList($"port-{portDirection.ToString().ToLower()}");
         }
 
         public Node node
@@ -387,19 +338,8 @@ namespace UnityEditor.Experimental.GraphView
         }
 
         public override Vector3 GetGlobalCenter()
-        {
-            if (m_GraphView == null)
-                m_GraphView = GetFirstAncestorOfType<GraphView>();
-
-            Vector2 overriddenPosition;
-
-            if (m_GraphView != null && m_GraphView.GetPortCenterOverride(this, out overriddenPosition))
-            {
-                return overriddenPosition;
-            }
-
-            return m_ConnectorBox.LocalToWorld(m_ConnectorBox.rect.center);
-        }
+            => m_ConnectorBox.LocalToWorld(
+                new Rect(Vector2.zero, m_ConnectorBox.layout.size).center);
 
         public override bool ContainsPoint(Vector2 localPoint)
         {
@@ -409,14 +349,14 @@ namespace UnityEditor.Experimental.GraphView
             if (direction == Direction.Input)
             {
                 boxRect = new Rect(-lRect.xMin, -lRect.yMin,
-                    lRect.width + lRect.xMin, rect.height);
+                    lRect.width + lRect.xMin, resolvedStyle.height);
 
                 boxRect.width += m_ConnectorText.layout.xMin - lRect.xMax;
             }
             else
             {
                 boxRect = new Rect(0, -lRect.yMin,
-                    rect.width - lRect.xMin, rect.height);
+                    resolvedStyle.width - lRect.xMin, resolvedStyle.height);
                 float leftSpace = lRect.xMin - m_ConnectorText.layout.xMax;
 
                 boxRect.xMin -= leftSpace;

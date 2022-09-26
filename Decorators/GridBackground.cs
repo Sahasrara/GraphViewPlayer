@@ -6,15 +6,15 @@ using System;
 using UnityEngine;
 using UnityEngine.UIElements;
 
-namespace UnityEditor.Experimental.GraphView
+namespace GraphViewPlayer
 {
-    public class GridBackground : ImmediateModeElement
+    public class GridBackground : VisualElement
     {
-        static CustomStyleProperty<float> s_SpacingProperty = new CustomStyleProperty<float>("--spacing");
-        static CustomStyleProperty<int> s_ThickLinesProperty = new CustomStyleProperty<int>("--thick-lines");
-        static CustomStyleProperty<Color> s_LineColorProperty = new CustomStyleProperty<Color>("--line-color");
-        static CustomStyleProperty<Color> s_ThickLineColorProperty = new CustomStyleProperty<Color>("--thick-line-color");
-        static CustomStyleProperty<Color> s_GridBackgroundColorProperty = new CustomStyleProperty<Color>("--grid-background-color");
+        static CustomStyleProperty<float> s_SpacingProperty = new("--grid-spacing");
+        static CustomStyleProperty<int> s_ThickLinesProperty = new("--grid-thick-lines");
+        static CustomStyleProperty<Color> s_LineColorProperty = new("--grid-line-color");
+        static CustomStyleProperty<Color> s_ThickLineColorProperty = new("--grid-thick-line-color");
+        static CustomStyleProperty<Color> s_GridBackgroundColorProperty = new("--grid-background-color");
 
         static readonly float s_DefaultSpacing = 50f;
         static readonly int s_DefaultThickLines = 10;
@@ -23,28 +23,22 @@ namespace UnityEditor.Experimental.GraphView
         static readonly Color s_DefaultGridBackgroundColor = new Color(0.17f, 0.17f, 0.17f, 1.0f);
 
         float m_Spacing = s_DefaultSpacing;
-        private float spacing => m_Spacing;
-
         int m_ThickLines = s_DefaultThickLines;
-        private int thickLines => m_ThickLines;
-
         Color m_LineColor = s_DefaultLineColor;
-        private Color lineColor => m_LineColor * UIElementsUtility.editorPlayModeTintColor;
-
         Color m_ThickLineColor = s_DefaultThickLineColor;
-        private Color thickLineColor => m_ThickLineColor * UIElementsUtility.editorPlayModeTintColor;
-
-        Color m_GridBackgroundColor = s_DefaultGridBackgroundColor;
-        private Color gridBackgroundColor => m_GridBackgroundColor * UIElementsUtility.editorPlayModeTintColor;
 
         private VisualElement m_Container;
+        private GraphView m_GraphView;
 
         public GridBackground()
         {
+            AddToClassList("grid-background");
             pickingMode = PickingMode.Ignore;
-
+            style.backgroundColor = s_DefaultGridBackgroundColor;
             this.StretchToParentSize();
-
+            generateVisualContent = OnGenerateVisualContent;
+            RegisterCallback<AttachToPanelEvent>(OnAttachEvent);
+            RegisterCallback<DetachFromPanelEvent>(DetachFromPanelEvent);
             RegisterCallback<CustomStyleResolvedEvent>(OnCustomStyleResolved);
         }
 
@@ -65,18 +59,18 @@ namespace UnityEditor.Experimental.GraphView
 
         private void OnCustomStyleResolved(CustomStyleResolvedEvent e)
         {
-            float spacingValue = 0f;
-            int thicklinesValue = 0;
-            Color thicklineColorValue = Color.clear;
-            Color lineColorValue = Color.clear;
-            Color gridColorValue = Color.clear;
+            float spacingValue;
+            int thicklinesValue;
+            Color thicklineColorValue;
+            Color lineColorValue;
+            Color gridColorValue;
 
             ICustomStyle customStyle = e.customStyle;
             if (customStyle.TryGetValue(s_SpacingProperty, out spacingValue))
                 m_Spacing = spacingValue;
 
             if (customStyle.TryGetValue(s_ThickLinesProperty, out thicklinesValue))
-                m_ThickLines = thickLines;
+                m_ThickLines = thicklinesValue;
 
             if (customStyle.TryGetValue(s_ThickLineColorProperty, out thicklineColorValue))
                 m_ThickLineColor = thicklineColorValue;
@@ -85,134 +79,142 @@ namespace UnityEditor.Experimental.GraphView
                 m_LineColor = lineColorValue;
 
             if (customStyle.TryGetValue(s_GridBackgroundColorProperty, out gridColorValue))
-                m_GridBackgroundColor = gridColorValue;
+                style.backgroundColor = gridColorValue;
         }
 
-        protected override void ImmediateRepaint()
+        private void OnAttachEvent(AttachToPanelEvent evt)
         {
+            // Parent must be GraphView
             VisualElement target = parent;
-
-            var graphView = target as GraphView;
-            if (graphView == null)
+            m_GraphView = target as GraphView;
+            if (m_GraphView == null)
             {
                 throw new InvalidOperationException("GridBackground can only be added to a GraphView");
             }
-            m_Container = graphView.contentViewContainer;
-            Rect clientRect = graphView.layout;
+            m_Container = m_GraphView.contentViewContainer;
+
+            // Listen for Zoom/Pan Changes
+            m_GraphView.viewTransformChanged += RequestRepaint;
+        }
+
+        private void DetachFromPanelEvent(DetachFromPanelEvent evt)
+        {
+            // Stop Listening for Zoom/Pan Changes
+            m_GraphView.viewTransformChanged += RequestRepaint;
+        } 
+        
+        private void RequestRepaint(GraphView graphView) => MarkDirtyRepaint();
+        
+        private void OnGenerateVisualContent(MeshGenerationContext ctx)
+        {
+            Rect clientRect = m_GraphView.layout;
+            Painter2D painter = ctx.painter2D;
 
             // Since we're always stretch to parent size, we will use (0,0) as (x,y) coordinates
             clientRect.x = 0;
             clientRect.y = 0;
 
-            var containerScale = new Vector3(m_Container.transform.matrix.GetColumn(0).magnitude,
+            Vector3 containerScale = new(m_Container.transform.matrix.GetColumn(0).magnitude,
                 m_Container.transform.matrix.GetColumn(1).magnitude,
                 m_Container.transform.matrix.GetColumn(2).magnitude);
-            var containerTranslation = m_Container.transform.matrix.GetColumn(3);
-            var containerPosition = m_Container.layout;
-
-            // background
-            HandleUtility.ApplyWireMaterial();
-
-            GL.Begin(GL.QUADS);
-            GL.Color(gridBackgroundColor);
-            GL.Vertex(new Vector3(clientRect.x, clientRect.y));
-            GL.Vertex(new Vector3(clientRect.xMax, clientRect.y));
-            GL.Vertex(new Vector3(clientRect.xMax, clientRect.yMax));
-            GL.Vertex(new Vector3(clientRect.x, clientRect.yMax));
-            GL.End();
+            Vector4 containerTranslation = m_Container.transform.matrix.GetColumn(3);
+            Rect containerPosition = m_Container.layout;
+            float xSpacingThin = m_Spacing * containerScale.x;
+            float xSpacingThick = xSpacingThin * m_ThickLines;
+            float ySpacingThin = m_Spacing * containerScale.y;
+            float ySpacingThick = ySpacingThin * m_ThickLines;
 
             // vertical lines
-            Vector3 from = new Vector3(clientRect.x, clientRect.y, 0.0f);
-            Vector3 to = new Vector3(clientRect.x, clientRect.height, 0.0f);
+            Vector3 from = new(clientRect.x, clientRect.y, 0.0f);
+            Vector3 to = new(clientRect.x, clientRect.height, 0.0f);
 
             var tx = Matrix4x4.TRS(containerTranslation, Quaternion.identity, Vector3.one);
 
             from = tx.MultiplyPoint(from);
             to = tx.MultiplyPoint(to);
 
-            from.x += (containerPosition.x * containerScale.x);
-            from.y += (containerPosition.y * containerScale.y);
-            to.x += (containerPosition.x * containerScale.x);
-            to.y += (containerPosition.y * containerScale.y);
+            from.x += containerPosition.x * containerScale.x;
+            from.y += containerPosition.y * containerScale.y;
+            to.x += containerPosition.x * containerScale.x;
+            to.y += containerPosition.y * containerScale.y;
 
             float thickGridLineX = from.x;
             float thickGridLineY = from.y;
 
             // Update from/to to start at beginning of clientRect
-            from.x = (from.x % (spacing * (containerScale.x)) - (spacing * (containerScale.x)));
+            from.x = from.x % xSpacingThin - xSpacingThin;
             to.x = from.x;
-
             from.y = clientRect.y;
             to.y = clientRect.y + clientRect.height;
-
             while (from.x < clientRect.width)
             {
-                from.x += spacing * containerScale.x;
-                to.x += spacing * containerScale.x;
+                from.x += xSpacingThin;
+                to.x += xSpacingThin;
 
-                GL.Begin(GL.LINES);
-                GL.Color(lineColor);
-                GL.Vertex(Clip(clientRect, from));
-                GL.Vertex(Clip(clientRect, to));
-                GL.End();
+                painter.strokeColor = m_LineColor;
+                painter.lineWidth = 1.0f;
+                painter.BeginPath();
+                painter.MoveTo(Clip(clientRect, from));
+                painter.LineTo(Clip(clientRect, to));
+                painter.Stroke();
             }
 
-            float thickLineSpacing = (spacing * thickLines);
-            from.x = to.x = (thickGridLineX % (thickLineSpacing * (containerScale.x)) - (thickLineSpacing * (containerScale.x)));
-
+            float thickLineSpacing = m_Spacing * m_ThickLines;
+            from.x = to.x = thickGridLineX % xSpacingThick - xSpacingThick;
             while (from.x < clientRect.width + thickLineSpacing)
             {
-                GL.Begin(GL.LINES);
-                GL.Color(thickLineColor);
-                GL.Vertex(Clip(clientRect, from));
-                GL.Vertex(Clip(clientRect, to));
-                GL.End();
+                painter.strokeColor = m_ThickLineColor;
+                painter.lineWidth = 1.0f;
+                painter.BeginPath();
+                painter.MoveTo(Clip(clientRect, from));
+                painter.LineTo(Clip(clientRect, to));
+                painter.Stroke();
 
-                from.x += (spacing * containerScale.x * thickLines);
-                to.x += (spacing * containerScale.x * thickLines);
+                from.x += xSpacingThick;
+                to.x += xSpacingThick;
             }
 
             // horizontal lines
             from = new Vector3(clientRect.x, clientRect.y, 0.0f);
             to = new Vector3(clientRect.x + clientRect.width, clientRect.y, 0.0f);
 
-            from.x += (containerPosition.x * containerScale.x);
-            from.y += (containerPosition.y * containerScale.y);
-            to.x += (containerPosition.x * containerScale.x);
-            to.y += (containerPosition.y * containerScale.y);
+            from.x += containerPosition.x * containerScale.x;
+            from.y += containerPosition.y * containerScale.y;
+            to.x += containerPosition.x * containerScale.x;
+            to.y += containerPosition.y * containerScale.y;
 
             from = tx.MultiplyPoint(from);
             to = tx.MultiplyPoint(to);
 
-            from.y = to.y = (from.y % (spacing * (containerScale.y)) - (spacing * (containerScale.y)));
+            from.y = to.y = from.y % ySpacingThin - ySpacingThin;
             from.x = clientRect.x;
             to.x = clientRect.width;
-
             while (from.y < clientRect.height)
             {
-                from.y += spacing * containerScale.y;
-                to.y += spacing * containerScale.y;
+                from.y += ySpacingThin;
+                to.y += ySpacingThin;
 
-                GL.Begin(GL.LINES);
-                GL.Color(lineColor);
-                GL.Vertex(Clip(clientRect, from));
-                GL.Vertex(Clip(clientRect, to));
-                GL.End();
+                painter.strokeColor = m_LineColor;
+                painter.lineWidth = 1.0f;
+                painter.BeginPath();
+                painter.MoveTo(Clip(clientRect, from));
+                painter.LineTo(Clip(clientRect, to));
+                painter.Stroke();
             }
 
-            thickLineSpacing = spacing * thickLines;
-            from.y = to.y = (thickGridLineY % (thickLineSpacing * (containerScale.y)) - (thickLineSpacing * (containerScale.y)));
-
+            thickLineSpacing = m_Spacing * m_ThickLines;
+            from.y = to.y = thickGridLineY % ySpacingThick - ySpacingThick;
             while (from.y < clientRect.height + thickLineSpacing)
             {
-                GL.Begin(GL.LINES);
-                GL.Color(thickLineColor);
-                GL.Vertex(Clip(clientRect, from));
-                GL.Vertex(Clip(clientRect, to));
-                GL.End();
+                painter.strokeColor = m_ThickLineColor;
+                painter.lineWidth = 1.0f;
+                painter.BeginPath();
+                painter.MoveTo(Clip(clientRect, from));
+                painter.LineTo(Clip(clientRect, to));
+                painter.Stroke();
 
-                from.y += spacing * containerScale.y * thickLines;
-                to.y += spacing * containerScale.y * thickLines;
+                from.y += ySpacingThick;
+                to.y += ySpacingThick;
             }
         }
     }

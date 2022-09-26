@@ -4,7 +4,7 @@
 
 using UnityEngine;
 
-namespace UnityEditor.Experimental.GraphView
+namespace GraphViewPlayer
 {
     struct Line2
     {

@@ -3,12 +3,11 @@
 // https://unity3d.com/legal/licenses/Unity_Reference_Only_License
 
 using System;
-using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
 using UnityEngine.UIElements;
 
-namespace UnityEditor.Experimental.GraphView
+namespace GraphViewPlayer
 {
     public abstract class GraphElement : VisualElement, ISelectable
     {
@@ -106,30 +105,17 @@ namespace UnityEditor.Experimental.GraphView
             set
             {
                 // Set new value (toggle old value)
-                if ((capabilities & Capabilities.Selectable) != Capabilities.Selectable)
-                    return;
-
-                if (m_Selected == value)
+                if (!IsSelectable())
                     return;
 
                 m_Selected = value;
-
-
-                if (m_Selected)
-                {
-                    pseudoStates |= PseudoStates.Checked;
-                }
-                else
-                {
-                    pseudoStates &= ~PseudoStates.Checked;
-                }
             }
         }
 
         protected GraphElement()
         {
             ClearClassList();
-            AddToClassList("graphElement");
+            AddToClassList("graph-element");
             elementTypeColor = new Color(0.9f, 0.9f, 0.9f, 0.5f);
 
             viewDataKey = Guid.NewGuid().ToString();
@@ -188,17 +174,24 @@ namespace UnityEditor.Experimental.GraphView
 
         public virtual bool IsStackable()
         {
+            return false;
+            /*
             bool capable = (capabilities & Capabilities.Stackable) == Capabilities.Stackable;
             // Dependencies will need to define the cabilities of their stack children nodes,
             // we will make some safe assumptions until dependencies can be updated.
             bool situational = ClassListContains("stack-child-element") || parent is StackNode;
             return capable || situational;
+            */
         }
 
         public virtual Vector3 GetGlobalCenter()
         {
-            var globalCenter = layout.center + parent.layout.position;
-            return MultiplyMatrix44Point2(ref parent.worldTransformRef, globalCenter);
+            Vector2 result = default;
+            Vector2 globalCenter = layout.center + parent.layout.position;
+            Matrix4x4 matrix = parent.worldTransform;
+            result.x = matrix.m00 * globalCenter.x + matrix.m01 * globalCenter.y + matrix.m03;
+            result.y = matrix.m10 * globalCenter.x + matrix.m11 * globalCenter.y + matrix.m13;
+            return result;
         }
 
         // TODO: Temporary transition function.
@@ -215,7 +208,10 @@ namespace UnityEditor.Experimental.GraphView
 
         public virtual void SetPosition(Rect newPos)
         {
-            layout = newPos;
+            style.left = newPos.x;
+            style.top = newPos.y;
+            style.width = newPos.width;
+            style.height = newPos.height;
         }
 
         public virtual void OnSelected()

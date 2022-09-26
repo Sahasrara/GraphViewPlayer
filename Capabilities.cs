@@ -4,7 +4,7 @@
 
 using System;
 
-namespace UnityEditor.Experimental.GraphView
+namespace GraphViewPlayer
 {
     [Flags]
     public enum Capabilities

@@ -5,7 +5,7 @@
 using UnityEngine;
 using UnityEngine.UIElements;
 
-namespace UnityEditor.Experimental.GraphView
+namespace GraphViewPlayer
 {
     public class Dragger : MouseManipulator
     {
@@ -30,7 +30,7 @@ namespace UnityEditor.Experimental.GraphView
 
             if (clampToParentEdges)
             {
-                Rect shadowRect = target.hierarchy.parent.rect;
+                Rect shadowRect = new(Vector2.zero, base.target.hierarchy.parent.layout.size);
                 if (rect.x < shadowRect.xMin)
                     rect.x = shadowRect.xMin;
                 else if (rect.xMax > shadowRect.xMax)
@@ -108,15 +108,10 @@ namespace UnityEditor.Experimental.GraphView
 
                 Rect rect = CalculatePosition(target.layout.x + diff.x, target.layout.y + diff.y, target.layout.width, target.layout.height);
 
-                if (target.isLayoutManual)
-                {
-                    target.layout = rect;
-                }
-                else if (target.resolvedStyle.position == Position.Absolute)
-                {
-                    target.style.left = rect.x;
-                    target.style.top = rect.y;
-                }
+                target.style.left = rect.x;
+                target.style.top = rect.y;
+                // target.style.width = rect.width;
+                // target.style.height = rect.height;
 
                 e.StopPropagation();
             }

@@ -6,7 +6,7 @@ using System;
 using UnityEngine;
 using UnityEngine.UIElements;
 
-namespace UnityEditor.Experimental.GraphView
+namespace GraphViewPlayer
 {
     // drags the contentContainer of a graphview around
     // add to the GraphView
@@ -34,7 +34,7 @@ namespace UnityEditor.Experimental.GraphView
 
             if (clampToParentEdges)
             {
-                Rect shadowRect = target.hierarchy.parent.rect;
+                Rect shadowRect = new(Vector2.zero, target.hierarchy.parent.layout.size);
                 if (rect.x < shadowRect.xMin)
                     rect.x = shadowRect.xMin;
                 else if (rect.xMax > shadowRect.xMax)
@@ -108,7 +108,7 @@ namespace UnityEditor.Experimental.GraphView
 
             // During the drag update only the view
             Vector3 s = graphView.contentViewContainer.transform.scale;
-            graphView.viewTransform.position += Vector3.Scale(diff, s);
+            graphView.UpdateViewTransform(graphView.viewTransform.position + Vector3.Scale(diff, s));
 
             e.StopPropagation();
         }

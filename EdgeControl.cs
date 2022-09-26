@@ -8,7 +8,7 @@ using UnityEngine.UIElements;
 using System.Collections.Generic;
 using UnityEngine.Profiling;
 
-namespace UnityEditor.Experimental.GraphView
+namespace GraphViewPlayer
 {
     public class EdgeControl : VisualElement
     {
@@ -39,7 +39,7 @@ namespace UnityEditor.Experimental.GraphView
             else
             {
                 result = new VisualElement();
-                result.AddToClassList("edgeCap");
+                result.AddToClassList("edge-cap");
             }
 
             return result;
@@ -52,8 +52,7 @@ namespace UnityEditor.Experimental.GraphView
 
         public EdgeControl()
         {
-            RegisterCallback<DetachFromPanelEvent>(OnLeavePanel);
-
+            AddToClassList("edge-control");
             m_FromCap = null;
             m_ToCap = null;
 
@@ -87,7 +86,6 @@ namespace UnityEditor.Experimental.GraphView
         private bool m_ControlPointsDirty = true;
         private bool m_RenderPointsDirty = true;
 
-        Mesh m_Mesh;
         public const float k_MinEdgeWidth = 1.75f;
 
         private const float k_EdgeLengthFromPort = 12.0f;
@@ -334,13 +332,25 @@ namespace UnityEditor.Experimental.GraphView
             {
                 Vector2 size = m_FromCap.layout.size;
                 if ((size.x > 0) && (size.y > 0))
-                    m_FromCap.layout = new Rect(parent.ChangeCoordinatesTo(this, m_From) - (size / 2), size);
+                {
+                    Rect rect = new(parent.ChangeCoordinatesTo(this, m_From) - size / 2f, size);
+                    m_FromCap.style.left = rect.x;
+                    m_FromCap.style.top = rect.y;
+                    m_FromCap.style.width = rect.width;
+                    m_FromCap.style.height = rect.height;
+                }
             }
             if (m_ToCap != null)
             {
                 Vector2 size = m_ToCap.layout.size;
                 if ((size.x > 0) && (size.y > 0))
-                    m_ToCap.layout = new Rect(parent.ChangeCoordinatesTo(this, m_To) - (size / 2), size);
+                {
+                    Rect rect = new(parent.ChangeCoordinatesTo(this, m_To) - size / 2f, size);
+                    m_ToCap.style.left = rect.x;
+                    m_ToCap.style.top = rect.y;
+                    m_ToCap.style.width = rect.width;
+                    m_ToCap.style.height = rect.height;
+                }
             }
         }
 
@@ -823,22 +833,13 @@ namespace UnityEditor.Experimental.GraphView
 
             if (layout != rect)
             {
-                layout = rect;
+                base.style.left = rect.x;
+                base.style.top = rect.y;
+                base.style.width = rect.width;
+                base.style.height = rect.height;
                 m_RenderPointsDirty = true;
             }
             Profiler.EndSample();
-        }
-
-        static Material s_LineMat;
-
-        static Material lineMat
-        {
-            get
-            {
-                if (s_LineMat == null)
-                    s_LineMat = new Material(EditorGUIUtility.LoadRequired("GraphView/AAEdge.shader") as Shader);
-                return s_LineMat;
-            }
         }
 
         void DrawEdge(MeshGenerationContext mgc)
@@ -851,28 +852,25 @@ namespace UnityEditor.Experimental.GraphView
                 return; // Don't draw anything
 
             Color inColor = this.inputColor;
-            Color outColor = this.outputColor;
-
-            inColor *= UIElementsUtility.editorPlayModeTintColor;
-            outColor *= UIElementsUtility.editorPlayModeTintColor;
+            // Color outColor = this.outputColor;
 
             uint cpt = (uint)m_RenderPoints.Count;
             var painter2D = mgc.painter2D;
 
             float width = edgeWidth;
-            float alpha = 1.0f;
+            // float alpha = 1.0f;
             float zoom = m_GraphView?.scale ?? 1.0f;
 
             if (edgeWidth * zoom < k_MinEdgeWidth)
             {
-                alpha = edgeWidth * zoom / k_MinEdgeWidth;
+                // alpha = edgeWidth * zoom / k_MinEdgeWidth;
                 width = k_MinEdgeWidth / zoom;
             }
 
-            k_Gradient.SetKeys(new[]{ new GradientColorKey(outColor, 0),new GradientColorKey(inColor, 1)},new []{new GradientAlphaKey(alpha, 0)});
+            // k_Gradient.SetKeys(new[]{ new GradientColorKey(outColor, 0),new GradientColorKey(inColor, 1)},new []{new GradientAlphaKey(alpha, 0)});
             painter2D.BeginPath();
-            painter2D.strokeGradient = k_Gradient;
-
+            // painter2D.strokeGradient = k_Gradient;
+            painter2D.strokeColor = inColor;
             painter2D.lineWidth = width;
             painter2D.MoveTo(m_RenderPoints[0]);
 
@@ -880,15 +878,6 @@ namespace UnityEditor.Experimental.GraphView
                 painter2D.LineTo(m_RenderPoints[i]);
 
             painter2D.Stroke();
-        }
-
-        void OnLeavePanel(DetachFromPanelEvent e)
-        {
-            if (m_Mesh != null)
-            {
-                UnityEngine.Object.DestroyImmediate(m_Mesh);
-                m_Mesh = null;
-            }
         }
     }
 }

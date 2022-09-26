@@ -5,7 +5,7 @@
 using System;
 using UnityEngine;
 
-namespace UnityEditor.Experimental.GraphView
+namespace GraphViewPlayer
 {
     public class RectUtils
     {

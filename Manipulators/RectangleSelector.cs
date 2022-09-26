@@ -8,12 +8,13 @@ using System.Linq;
 using UnityEngine;
 using UnityEngine.UIElements;
 
-namespace UnityEditor.Experimental.GraphView
+namespace GraphViewPlayer
 {
     public class RectangleSelector : MouseManipulator
     {
         private readonly RectangleSelect m_Rectangle;
         bool m_Active;
+        private GraphView m_GraphView;
 
         public RectangleSelector()
         {
@@ -76,32 +77,36 @@ namespace UnityEditor.Experimental.GraphView
 
         private void OnMouseDown(MouseDownEvent e)
         {
+            // Not Active
             if (m_Active)
             {
                 e.StopImmediatePropagation();
                 return;
             }
 
-            var graphView = target as GraphView;
-            if (graphView == null)
-                return;
+            // Not an event we care about
+            if (!CanStartManipulation(e)) return;
 
-            if (CanStartManipulation(e))
+            // Target is not a RUIGraphView
+            m_GraphView = base.target as GraphView;
+            if (m_GraphView == null) return;
+
+            // Don't start marquee unless the click started on the RUIGraphView
+            if (e.target is not GraphView) return;
+
+            // Clear selection unless this was an action key + click
+            if (!e.actionKey) m_GraphView.ClearSelection();
+
+            // Add marquee
+            m_GraphView.Add(m_Rectangle);
+            m_Rectangle.coordinates = new()
             {
-                if (!e.actionKey)
-                {
-                    graphView.ClearSelection();
-                }
-
-                graphView.Add(m_Rectangle);
-
-                m_Rectangle.start = e.localMousePosition;
-                m_Rectangle.end = m_Rectangle.start;
-
-                m_Active = true;
-                target.CaptureMouse(); // We want to receive events even when mouse is not over ourself.
-                e.StopImmediatePropagation();
-            }
+                start = e.localMousePosition,
+                end = e.localMousePosition,
+            };
+            m_Active = true;
+            target.CaptureMouse();
+            e.StopImmediatePropagation();
         }
 
         private void OnMouseUp(MouseUpEvent e)
@@ -170,64 +175,79 @@ namespace UnityEditor.Experimental.GraphView
             e.StopPropagation();
         }
 
-        private class RectangleSelect : ImmediateModeElement
+        private class RectangleSelect : VisualElement
         {
-            public Vector2 start { get; set; }
-            public Vector2 end { get; set; }
+            private Vector2 m_Start;
+            private Vector2 m_End;
 
-            protected override void ImmediateRepaint()
+           internal Vector2 start
             {
-                VisualElement t = parent;
-                Vector2 screenStart = start;
-                Vector2 screenEnd = end;
-
-                // Avoid drawing useless information
-                if (start == end)
-                    return;
-
-                // Apply offset
-                screenStart += t.layout.position;
-                screenEnd += t.layout.position;
-
-                var r = new Rect
+                get => m_Start;
+                set
                 {
-                    min = new Vector2(Math.Min(screenStart.x, screenEnd.x), Math.Min(screenStart.y, screenEnd.y)),
-                    max = new Vector2(Math.Max(screenStart.x, screenEnd.x), Math.Max(screenStart.y, screenEnd.y))
-                };
-
-                var lineColor = new Color(1.0f, 0.6f, 0.0f, 1.0f);
-                var segmentSize = 5f;
-
-                Vector3[] points =
-                {
-                    new Vector3(r.xMin, r.yMin, 0.0f),
-                    new Vector3(r.xMax, r.yMin, 0.0f),
-                    new Vector3(r.xMax, r.yMax, 0.0f),
-                    new Vector3(r.xMin, r.yMax, 0.0f)
-                };
-
-                DrawDottedLine(points[0], points[1], segmentSize, lineColor);
-                DrawDottedLine(points[1], points[2], segmentSize, lineColor);
-                DrawDottedLine(points[2], points[3], segmentSize, lineColor);
-                DrawDottedLine(points[3], points[0], segmentSize, lineColor);
+                    m_Start = value;
+                    MarkDirtyRepaint();
+                }
             }
 
-            private void DrawDottedLine(Vector3 p1, Vector3 p2, float segmentsLength, Color col)
+            internal Vector2 end
             {
-                HandleUtility.ApplyWireMaterial();
-
-                GL.Begin(GL.LINES);
-                GL.Color(col);
-
-                float length = Vector3.Distance(p1, p2); // ignore z component
-                int count = Mathf.CeilToInt(length / segmentsLength);
-                for (int i = 0; i < count; i += 2)
+                get => m_End;
+                set
                 {
-                    GL.Vertex((Vector3.Lerp(p1, p2, i * segmentsLength / length)));
-                    GL.Vertex((Vector3.Lerp(p1, p2, (i + 1) * segmentsLength / length)));
+                    m_End = value;
+                    MarkDirtyRepaint();
                 }
+            }
 
-                GL.End();
+            internal RectangleCoordinates coordinates
+            {
+                get => new() { start = m_Start, end = m_End };
+                set
+                {
+                    m_Start = value.start;
+                    m_End = value.end;
+                    MarkDirtyRepaint();
+                }
+            }
+
+            internal Rect SelectionRect
+            {
+                get => new()
+                {
+                    min = new(Math.Min(m_Start.x, m_End.x), Math.Min(m_Start.y, m_End.y)),
+                    max = new(Math.Max(m_Start.x, m_End.x), Math.Max(m_Start.y, m_End.y)),
+                };
+            }
+
+            internal RectangleSelect()
+            {
+                AddToClassList("marquee");
+                pickingMode = PickingMode.Ignore;
+                generateVisualContent = OnGenerateVisualContent;
+            }
+
+            private void OnGenerateVisualContent(MeshGenerationContext ctx)
+            {
+                Rect selectionRect = SelectionRect;
+                Painter2D painter = ctx.painter2D;
+                painter.lineWidth = 1.0f;
+                painter.strokeColor = Color.white;
+                painter.fillColor = Color.gray;
+                painter.BeginPath();
+                painter.MoveTo(new(selectionRect.xMin, selectionRect.yMin));
+                painter.LineTo(new(selectionRect.xMax, selectionRect.yMin));
+                painter.LineTo(new(selectionRect.xMax, selectionRect.yMax));
+                painter.LineTo(new(selectionRect.xMin, selectionRect.yMax));
+                painter.LineTo(new(selectionRect.xMin, selectionRect.yMin));
+                painter.Stroke();
+                painter.Fill();
+            }
+
+            internal struct RectangleCoordinates
+            {
+                internal Vector2 start;
+                internal Vector2 end;
             }
         }
     }

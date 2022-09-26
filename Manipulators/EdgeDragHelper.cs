@@ -7,7 +7,7 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UIElements;
 
-namespace UnityEditor.Experimental.GraphView
+namespace GraphViewPlayer
 {
     public abstract class EdgeDragHelper
     {
@@ -31,7 +31,6 @@ namespace UnityEditor.Experimental.GraphView
         protected List<Port> m_CompatiblePorts;
         private Edge m_GhostEdge;
         protected GraphView m_GraphView;
-        protected static NodeAdapter s_nodeAdapter = new NodeAdapter();
         protected readonly IEdgeConnectorListener m_Listener;
 
         private IVisualElementScheduledItem m_PanSchedule;
@@ -93,10 +92,10 @@ namespace UnityEditor.Experimental.GraphView
                 draggedPort = null;
             }
 
-            if (edgeCandidate != null)
-            {
-                edgeCandidate.SetEnabled(true);
-            }
+            // if (edgeCandidate != null)
+            // {
+                // edgeCandidate.SetEnabled(true);
+            // }
 
             m_GhostEdge = null;
             edgeCandidate = null;
@@ -128,7 +127,7 @@ namespace UnityEditor.Experimental.GraphView
             bool startFromOutput = (draggedPort.direction == Direction.Output);
 
             edgeCandidate.candidatePosition = mousePosition;
-            edgeCandidate.SetEnabled(false);
+            // edgeCandidate.SetEnabled(false);
 
             if (startFromOutput)
             {
@@ -144,7 +143,7 @@ namespace UnityEditor.Experimental.GraphView
             draggedPort.portCapLit = true;
 
 
-            m_CompatiblePorts = m_GraphView.GetCompatiblePorts(draggedPort, s_nodeAdapter);
+            m_CompatiblePorts = m_GraphView.GetCompatiblePorts(draggedPort);
 
             // Only light compatible anchors when dragging an edge.
             m_GraphView.ports.ForEach((p) =>  {
@@ -296,7 +295,7 @@ namespace UnityEditor.Experimental.GraphView
                 m_Listener.OnDropOutsidePort(edgeCandidate, mousePosition);
             }
 
-            edgeCandidate.SetEnabled(true);
+            // edgeCandidate.SetEnabled(true);
 
             if (edgeCandidate.input != null)
                 edgeCandidate.input.portCapLit = false;

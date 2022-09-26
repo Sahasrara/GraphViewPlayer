@@ -5,7 +5,7 @@
 using UnityEngine;
 using UnityEngine.UIElements;
 
-namespace UnityEditor.Experimental.GraphView
+namespace GraphViewPlayer
 {
     public interface IEdgeConnectorListener
     {
@@ -51,6 +51,7 @@ namespace UnityEditor.Experimental.GraphView
             target.UnregisterCallback<MouseMoveEvent>(OnMouseMove);
             target.UnregisterCallback<MouseUpEvent>(OnMouseUp);
             target.UnregisterCallback<KeyDownEvent>(OnKeyDown);
+            target.UnregisterCallback<MouseCaptureOutEvent>(OnCaptureOut);
         }
 
         protected virtual void OnMouseDown(MouseDownEvent e)

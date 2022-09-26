@@ -6,7 +6,7 @@ using System;
 using UnityEngine;
 using UnityEngine.UIElements;
 
-namespace UnityEditor.Experimental.GraphView
+namespace GraphViewPlayer
 {
     public class ContentZoomer : Manipulator
     {
@@ -157,8 +157,6 @@ namespace UnityEditor.Experimental.GraphView
             scale.z = 1;
 
             position -= Vector3.Scale(new Vector3(x, y, 0), scale);
-            position.x = GUIUtility.RoundToPixelGrid(position.x);
-            position.y = GUIUtility.RoundToPixelGrid(position.y);
 
             graphView.UpdateViewTransform(position, scale);
 

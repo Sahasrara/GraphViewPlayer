@@ -6,7 +6,7 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UIElements;
 
-namespace UnityEditor.Experimental.GraphView
+namespace GraphViewPlayer
 {
     public class EdgeManipulator : MouseManipulator
     {
@@ -15,8 +15,8 @@ namespace UnityEditor.Experimental.GraphView
         private Vector2 m_PressPos;
         private Port m_ConnectedPort;
         private EdgeDragHelper m_ConnectedEdgeDragHelper;
-        private List<Edge> m_AdditionalEdges;
-        private List<EdgeDragHelper> m_AdditionalEdgeDragHelpers;
+        private readonly List<Edge> m_AdditionalEdges;
+        private readonly List<EdgeDragHelper> m_AdditionalEdgeDragHelpers;
         private Port m_DetachedPort;
         private bool m_DetachedFromInputPort;
         private static int s_StartDragDistance = 10;
@@ -25,7 +25,8 @@ namespace UnityEditor.Experimental.GraphView
         public EdgeManipulator()
         {
             activators.Add(new ManipulatorActivationFilter { button = MouseButton.LeftMouse });
-
+            m_AdditionalEdges = new();
+            m_AdditionalEdgeDragHelpers = new();
             Reset();
         }
 
@@ -51,7 +52,8 @@ namespace UnityEditor.Experimental.GraphView
             m_Edge = null;
             m_ConnectedPort = null;
             m_ConnectedEdgeDragHelper = null;
-            m_AdditionalEdgeDragHelpers = null;
+            m_AdditionalEdges.Clear();
+            m_AdditionalEdgeDragHelpers.Clear();
             m_DetachedPort = null;
             m_DetachedFromInputPort = false;
         }
@@ -132,8 +134,8 @@ namespace UnityEditor.Experimental.GraphView
                 m_ConnectedEdgeDragHelper.draggedPort = m_ConnectedPort;
                 m_ConnectedEdgeDragHelper.edgeCandidate = m_Edge;
 
-                m_AdditionalEdgeDragHelpers = new List<EdgeDragHelper>();
-                m_AdditionalEdges = new List<Edge>();
+                m_AdditionalEdgeDragHelpers.Clear();
+                m_AdditionalEdges.Clear();
 
                 GraphView gv = m_DetachedPort.GetFirstAncestorOfType<GraphView>();
 
@@ -222,6 +224,7 @@ namespace UnityEditor.Experimental.GraphView
             {
                 if (evt.keyCode == KeyCode.Escape)
                 {
+                    Debug.Log("YAY");
                     StopDragging();
                     evt.StopPropagation();
                 }

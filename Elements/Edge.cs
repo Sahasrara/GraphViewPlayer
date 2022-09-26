@@ -6,7 +6,7 @@ using UnityEngine;
 using UnityEngine.UIElements;
 using UnityEngine.Profiling;
 
-namespace UnityEditor.Experimental.GraphView
+namespace GraphViewPlayer
 {
     public class Edge : GraphElement
     {
@@ -158,18 +158,16 @@ namespace UnityEditor.Experimental.GraphView
         {
             ClearClassList();
             AddToClassList("edge");
-            style.position = Position.Absolute;
 
             Add(edgeControl);
 
             capabilities |= Capabilities.Selectable | Capabilities.Deletable;
 
             this.AddManipulator(new EdgeManipulator());
-            this.AddManipulator(new ContextualMenuManipulator(null));
+            this.AddManipulator(new ContextualMenuManipulator(null)); // TODO
 
             RegisterCallback<AttachToPanelEvent>(OnEdgeAttach);
             RegisterCallback<GeometryChangedEvent>(OnGeometryChanged);
-            AddStyleSheetPath("StyleSheets/GraphView/Edge.uss");
         }
 
         public override bool Overlaps(Rect rectangle)

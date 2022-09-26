@@ -124,7 +124,7 @@ namespace GraphViewPlayer
         private readonly Dictionary<GraphElement, OriginalPos> m_OriginalPos;
         private Vector2 m_originalMouse;
 
-        static void SendDragAndDropEvent(IDragAndDropEvent evt, List<ISelectable> selection, IDropTarget dropTarget, ISelection dragSource)
+        static void SendDragAndDropEvent(IPlayerDragAndDropEvent evt, List<ISelectable> selection, IDropTarget dropTarget, ISelection dragSource)
         {
             if (dropTarget == null)
             {
@@ -132,17 +132,17 @@ namespace GraphViewPlayer
             }
 
             EventBase e = evt as EventBase;
-            if (e.eventTypeId == DragExitedEvent.TypeId())
+            if (e.eventTypeId == PlayerDragExitedEvent.TypeId())
             {
                 dropTarget.DragExited();
             }
-            else if (e.eventTypeId == DragEnterEvent.TypeId())
+            else if (e.eventTypeId == PlayerDragEnterEvent.TypeId())
             {
-                dropTarget.DragEnter(evt as DragEnterEvent, selection, dropTarget, dragSource);
+                dropTarget.DragEnter(evt as PlayerDragEnterEvent, selection, dropTarget, dragSource);
             }
-            else if (e.eventTypeId == DragLeaveEvent.TypeId())
+            else if (e.eventTypeId == PlayerDragLeaveEvent.TypeId())
             {
-                dropTarget.DragLeave(evt as DragLeaveEvent, selection, dropTarget, dragSource);
+                dropTarget.DragLeave(evt as PlayerDragLeaveEvent, selection, dropTarget, dragSource);
             }
 
             if (!dropTarget.CanAcceptDrop(selection))
@@ -150,13 +150,13 @@ namespace GraphViewPlayer
                 return;
             }
 
-            if (e.eventTypeId == DragPerformEvent.TypeId())
+            if (e.eventTypeId == PlayerDragPerformEvent.TypeId())
             {
-                dropTarget.DragPerform(evt as DragPerformEvent, selection, dropTarget, dragSource);
+                dropTarget.DragPerform(evt as PlayerDragPerformEvent, selection, dropTarget, dragSource);
             }
-            else if (e.eventTypeId == DragUpdatedEvent.TypeId())
+            else if (e.eventTypeId == PlayerDragUpdatedEvent.TypeId())
             {
-                dropTarget.DragUpdated(evt as DragUpdatedEvent, selection, dropTarget, dragSource);
+                dropTarget.DragUpdated(evt as PlayerDragUpdatedEvent, selection, dropTarget, dragSource);
             }
         }
 
@@ -378,19 +378,19 @@ namespace GraphViewPlayer
             {
                 if (m_PrevDropTarget != null)
                 {
-                    using (DragLeaveEvent eexit = DragLeaveEvent.GetPooled(e))
+                    using (PlayerDragLeaveEvent eexit = PlayerDragLeaveEvent.GetPooled(e))
                     {
                         SendDragAndDropEvent(eexit, selection, m_PrevDropTarget, m_GraphView);
                     }
                 }
 
-                using (DragEnterEvent eenter = DragEnterEvent.GetPooled(e))
+                using (PlayerDragEnterEvent eenter = PlayerDragEnterEvent.GetPooled(e))
                 {
                     SendDragAndDropEvent(eenter, selection, dropTarget, m_GraphView);
                 }
             }
 
-            using (DragUpdatedEvent eupdated = DragUpdatedEvent.GetPooled(e))
+            using (PlayerDragUpdatedEvent eupdated = PlayerDragUpdatedEvent.GetPooled(e))
             {
                 SendDragAndDropEvent(eupdated, selection, dropTarget, m_GraphView);
             }
@@ -511,14 +511,14 @@ namespace GraphViewPlayer
                     {
                         if (m_PrevDropTarget.CanAcceptDrop(selection))
                         {
-                            using (DragPerformEvent drop = DragPerformEvent.GetPooled(evt))
+                            using (PlayerDragPerformEvent drop = PlayerDragPerformEvent.GetPooled(evt))
                             {
                                 SendDragAndDropEvent(drop, selection, m_PrevDropTarget, m_GraphView);
                             }
                         }
                         else
                         {
-                            using (DragExitedEvent dexit = DragExitedEvent.GetPooled(evt))
+                            using (PlayerDragExitedEvent dexit = PlayerDragExitedEvent.GetPooled(evt))
                             {
                                 SendDragAndDropEvent(dexit, selection, m_PrevDropTarget, m_GraphView);
                             }
@@ -560,7 +560,7 @@ namespace GraphViewPlayer
                 m_GraphView.UpdateViewTransform(p, s);
             }
 
-            using (DragExitedEvent dexit = DragExitedEvent.GetPooled())
+            using (PlayerDragExitedEvent dexit = PlayerDragExitedEvent.GetPooled())
             {
                 List<ISelectable> selection = m_GraphView.selection;
                 SendDragAndDropEvent(dexit, selection, m_PrevDropTarget, m_GraphView);

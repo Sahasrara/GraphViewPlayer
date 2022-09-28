@@ -149,6 +149,7 @@
 
 .edge {
     --edge-width: 2;
+    --edge-width-selected: 2;
     --edge-color: rgba(146, 146, 146, 1);
     --edge-color-selected: rgba(240, 240, 240, 1);
     --edge-color-ghost: rgba(85, 85, 85, 1);
@@ -171,6 +172,7 @@
 .marquee {
     position: absolute;
     opacity: 0.25;
+    --layer: 100;
 }
 
 .hidden {

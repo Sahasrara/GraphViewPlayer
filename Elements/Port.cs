@@ -6,11 +6,10 @@ using System;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UIElements;
-using UnityEngine.UIElements.StyleSheets;
 
 namespace GraphViewPlayer
 {
-    public class Port : GraphElement
+    public class Port : VisualElement 
     {
         private static CustomStyleProperty<Color> s_PortColorProperty = new CustomStyleProperty<Color>("--port-color");
         private static CustomStyleProperty<Color> s_DisabledPortColorProperty = new CustomStyleProperty<Color>("--disabled-port-color");
@@ -19,15 +18,9 @@ namespace GraphViewPlayer
         private static readonly Color s_DefaultDisabledColor = new Color(70 / 255f, 70 / 255f, 70 / 255f);
 
         protected EdgeConnector m_EdgeConnector;
-
         protected VisualElement m_ConnectorBox;
         protected Label m_ConnectorText;
-
         protected VisualElement m_ConnectorBoxCap;
-
-        protected GraphView m_GraphView;
-
-        public override bool showInMiniMap => false;
 
         public bool allowMultiDrag { get; set; } = true;
 
@@ -53,23 +46,21 @@ namespace GraphViewPlayer
             set { m_ConnectorText.text = value; }
         }
 
-        internal bool alwaysVisible { get; set; }
-
-        private bool m_portCapLit;
-        public bool portCapLit
-        {
-            get
-            {
-                return m_portCapLit;
-            }
-            set
-            {
-                if (value == m_portCapLit)
-                    return;
-                m_portCapLit = value;
-                UpdateCapColor();
-            }
-        }
+        // private bool m_portCapLit;
+        // public bool portCapLit
+        // {
+        //     get
+        //     {
+        //         return m_portCapLit;
+        //     }
+        //     set
+        //     {
+        //         if (value == m_portCapLit)
+        //             return;
+        //         m_portCapLit = value;
+        //         UpdateCapColor();
+        //     }
+        // }
 
         public Direction direction
         {
@@ -99,8 +90,6 @@ namespace GraphViewPlayer
         {
             get { return m_EdgeConnector; }
         }
-
-        public object source { get; set; }
 
         private bool m_Highlight = true;
         public bool highlight
@@ -167,9 +156,6 @@ namespace GraphViewPlayer
             get { return m_DisabledPortColor; }
         }
 
-        internal Action<Port> OnConnect;
-        internal Action<Port> OnDisconnect;
-
         public Edge ConnectTo(Port other)
         {
             return ConnectTo<Edge>(other);
@@ -188,9 +174,6 @@ namespace GraphViewPlayer
             edge.output = direction == Direction.Output ? this : other;
             edge.input = direction == Direction.Input ? this : other;
 
-            this.Connect(edge);
-            other.Connect(edge);
-
             return edge;
         }
 
@@ -202,7 +185,6 @@ namespace GraphViewPlayer
             if (!m_Connections.Contains(edge))
                 m_Connections.Add(edge);
 
-            OnConnect?.Invoke(this);
             UpdateCapColor();
         }
 
@@ -212,18 +194,21 @@ namespace GraphViewPlayer
                 throw new ArgumentException("The value passed to PortPresenter.Disconnect is null");
 
             m_Connections.Remove(edge);
-            OnDisconnect?.Invoke(this);
             UpdateCapColor();
         }
 
         public virtual void DisconnectAll()
         {
             m_Connections.Clear();
-            OnDisconnect?.Invoke(this);
             UpdateCapColor();
         }
 
-        public virtual bool IsConnected(Port other)
+        public virtual bool CanConnectToMore()
+        {
+            return capacity == Capacity.Multi || !connected;
+        } 
+
+        public bool IsConnectedTo(Port other)
         {
             foreach (Edge e in m_Connections)
             {
@@ -239,64 +224,12 @@ namespace GraphViewPlayer
             return false;
         }
 
-        private class DefaultEdgeConnectorListener : IEdgeConnectorListener
-        {
-            private GraphViewChange m_GraphViewChange;
-            private List<Edge> m_EdgesToCreate;
-            private List<GraphElement> m_EdgesToDelete;
-
-            public DefaultEdgeConnectorListener()
-            {
-                m_EdgesToCreate = new List<Edge>();
-                m_EdgesToDelete = new List<GraphElement>();
-
-                m_GraphViewChange.edgesToCreate = m_EdgesToCreate;
-            }
-
-            public void OnDropOutsidePort(Edge edge, Vector2 position) {}
-            public void OnDrop(GraphView graphView, Edge edge)
-            {
-                m_EdgesToCreate.Clear();
-                m_EdgesToCreate.Add(edge);
-
-                // We can't just add these edges to delete to the m_GraphViewChange
-                // because we want the proper deletion code in GraphView to also
-                // be called. Of course, that code (in DeleteElements) also
-                // sends a GraphViewChange.
-                m_EdgesToDelete.Clear();
-                if (edge.input.capacity == Capacity.Single)
-                    foreach (Edge edgeToDelete in edge.input.connections)
-                        if (edgeToDelete != edge)
-                            m_EdgesToDelete.Add(edgeToDelete);
-                if (edge.output.capacity == Capacity.Single)
-                    foreach (Edge edgeToDelete in edge.output.connections)
-                        if (edgeToDelete != edge)
-                            m_EdgesToDelete.Add(edgeToDelete);
-                if (m_EdgesToDelete.Count > 0)
-                    graphView.DeleteElements(m_EdgesToDelete);
-
-                var edgesToCreate = m_EdgesToCreate;
-                if (graphView.graphViewChanged != null)
-                {
-                    edgesToCreate = graphView.graphViewChanged(m_GraphViewChange).edgesToCreate;
-                }
-
-                foreach (Edge e in edgesToCreate)
-                {
-                    graphView.AddElement(e);
-                    edge.input.Connect(e);
-                    edge.output.Connect(e);
-                }
-            }
-        }
-
         // TODO This is a workaround to avoid having a generic type for the port as generic types mess with USS.
         public static Port Create<TEdge>(Orientation orientation, Direction direction, Capacity capacity) where TEdge : Edge, new()
         {
-            var connectorListener = new DefaultEdgeConnectorListener();
             var port = new Port(orientation, direction, capacity)
             {
-                m_EdgeConnector = new EdgeConnector<TEdge>(connectorListener),
+                m_EdgeConnector = new EdgeConnector<TEdge>(),
             };
             port.AddManipulator(port.m_EdgeConnector);
             return port;
@@ -330,6 +263,8 @@ namespace GraphViewPlayer
 
             AddToClassList("port");
             AddToClassList($"port-{portDirection.ToString().ToLower()}");
+            RegisterCallback<CustomStyleResolvedEvent>(OnCustomStyleResolved);
+            focusable = true;
         }
 
         public Node node
@@ -337,9 +272,8 @@ namespace GraphViewPlayer
             get { return GetFirstAncestorOfType<Node>(); }
         }
 
-        public override Vector3 GetGlobalCenter()
-            => m_ConnectorBox.LocalToWorld(
-                new Rect(Vector2.zero, m_ConnectorBox.layout.size).center);
+        public Vector3 GetGlobalCenter() 
+            => m_ConnectorBox.LocalToWorld(new Rect(Vector2.zero, m_ConnectorBox.layout.size).center);
 
         public override bool ContainsPoint(Vector2 localPoint)
         {
@@ -368,7 +302,8 @@ namespace GraphViewPlayer
 
         internal void UpdateCapColor()
         {
-            if (portCapLit || connected)
+            // if (portCapLit || connected)
+            if (connected)
             {
                 m_ConnectorBoxCap.style.backgroundColor = portColor;
             }
@@ -383,7 +318,7 @@ namespace GraphViewPlayer
             if (m_ConnectorBox == null)
                 return;
 
-            var color = highlight ? m_PortColor : m_DisabledPortColor;
+            var color = highlight ? m_PortColor : disabledPortColor;
             m_ConnectorBox.style.borderLeftColor = color;
             m_ConnectorBox.style.borderTopColor = color;
             m_ConnectorBox.style.borderRightColor = color;
@@ -424,20 +359,18 @@ namespace GraphViewPlayer
             }
         }
 
-        protected override void OnCustomStyleResolved(ICustomStyle styles)
+        private void OnCustomStyleResolved(CustomStyleResolvedEvent evt)
         {
-            base.OnCustomStyleResolved(styles);
-
             Color portColorValue = Color.clear;
             Color disableColorValue = Color.clear;
 
-            if (!m_PortColorIsInline && styles.TryGetValue(s_PortColorProperty, out portColorValue))
+            if (!m_PortColorIsInline && evt.customStyle.TryGetValue(s_PortColorProperty, out portColorValue))
             {
                 m_PortColor = portColorValue;
                 UpdateCapColor();
             }
 
-            if (styles.TryGetValue(s_DisabledPortColorProperty, out disableColorValue))
+            if (evt.customStyle.TryGetValue(s_DisabledPortColorProperty, out disableColorValue))
                 m_DisabledPortColor = disableColorValue;
 
             UpdateConnectorColorAndEnabledState();

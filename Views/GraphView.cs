@@ -5,22 +5,12 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Runtime.CompilerServices;
 using UnityEngine;
 using UnityEngine.UIElements;
 
 namespace GraphViewPlayer
 {
-    public struct GraphViewChange
-    {
-        // Operations Pending
-        public List<GraphElement> elementsToRemove;
-        public List<Edge> edgesToCreate;
-
-        // Operations Completed
-        public List<GraphElement> movedElements;
-        public Vector2 moveDelta;
-    }
-
     public abstract class GraphView : VisualElement, ISelection
     {
         private static StyleSheet s_DefaultStyle;
@@ -40,19 +30,8 @@ namespace GraphViewPlayer
         public class Layer : VisualElement {}
 
         // Delegates and Callbacks
-// TODO
-        public delegate GraphViewChange GraphViewChanged(GraphViewChange graphViewChange);
-        public GraphViewChanged graphViewChanged { get; set; }
-
-        private GraphViewChange m_GraphViewChange;
-        private List<GraphElement> m_ElementsToRemove;
-
-        public delegate void ViewTransformChanged(GraphView graphView);
-        public ViewTransformChanged viewTransformChanged { get; set; }
-
-        // BE AWARE: This is just a stopgap measure to get the minimap notified and should not be used outside of it.
-        // This should also get ripped once the minimap is re-written.
-        internal Action redrawn { get; set; }
+        internal delegate void ViewTransformChanged(GraphView graphView);
+        internal ViewTransformChanged viewTransformChanged { get; set; }
 
         class ContentViewContainer : VisualElement
         {
@@ -81,13 +60,9 @@ namespace GraphViewPlayer
             contentViewContainer.transform.position = newPosition;
             contentViewContainer.transform.scale = newScale;
 
-            if (viewTransformChanged != null)
-                viewTransformChanged(this);
+            viewTransformChanged?.Invoke(this);
+            OnViewportChanged();
         }
-
-        bool m_FrameAnimate = false;
-
-        public bool isReframable { get; set; }
 
         public enum FrameType
         {
@@ -105,6 +80,7 @@ namespace GraphViewPlayer
             get { return graphViewContainer; }
         }
 
+        #region Constructor
         protected GraphView()
         {
             //
@@ -141,7 +117,7 @@ namespace GraphViewPlayer
             // Content Container - Level 3
             //
             // Content Container
-            contentViewContainer= new ContentViewContainer
+            contentViewContainer = new ContentViewContainer
             {
                 pickingMode = PickingMode.Ignore,
                 usageHints = UsageHints.GroupTransform
@@ -153,7 +129,7 @@ namespace GraphViewPlayer
             // Other Initialization
             //
             // Cached Queries
-            graphElements = contentViewContainer.Query<GraphElement>().Where(e => !(e is Port)).Build();
+            graphElements = contentViewContainer.Query<GraphElement>().Build();
             nodes = contentViewContainer.Query<Node>().Build();
             edges = this.Query<Layer>().Children<Edge>().Build();
             ports = contentViewContainer.Query().Children<Layer>().Descendents<Port>().Build();
@@ -164,23 +140,12 @@ namespace GraphViewPlayer
             // Layers
             m_ContainerLayers = new();
 
-            // Elements to Remove
-            m_ElementsToRemove = new();
-
-            // Graph View Change
-            m_GraphViewChange.elementsToRemove = m_ElementsToRemove;
-
-            // Framing & Focus
-            isReframable = true;
+            // Focus
             focusable = true;
-
-            // Event Handlers
-            RegisterCallback<ValidateCommandEvent>(OnValidateCommand);
-            RegisterCallback<ExecuteCommandEvent>(OnExecuteCommand);
-            RegisterCallback<AttachToPanelEvent>(OnEnterPanel);
-            RegisterCallback<DetachFromPanelEvent>(OnLeavePanel);
         }
+        #endregion
 
+        #region Layers
         void AddLayer(Layer layer, int index)
         {
             m_ContainerLayers.Add(index, layer);
@@ -220,12 +185,14 @@ namespace GraphViewPlayer
             if (selected)
                 element.RegisterCallback<DetachFromPanelEvent>(OnSelectedElementDetachedFromPanel);
         }
+        #endregion
 
         public UQueryState<GraphElement> graphElements { get; private set; }
         public UQueryState<Node> nodes { get; private set; }
         public UQueryState<Port> ports { get; private set; }
         public UQueryState<Edge> edges { get; private set; }
 
+        #region Zoom
         private ContentZoomer m_Zoomer;
 
         public float minScale
@@ -233,7 +200,7 @@ namespace GraphViewPlayer
             get => m_Zoomer.minScale;
             set
             {
-                m_Zoomer.minScale = value;
+                m_Zoomer.minScale = Math.Min(value, ContentZoomer.DefaultMinScale);
                 ValidateTransform();
             }
         }
@@ -243,7 +210,7 @@ namespace GraphViewPlayer
             get => m_Zoomer.maxScale;
             set
             {
-                m_Zoomer.maxScale = value;
+                m_Zoomer.maxScale = Math.Max(value, ContentZoomer.DefaultMaxScale);
                 ValidateTransform();
             }
         }
@@ -253,7 +220,7 @@ namespace GraphViewPlayer
             get => m_Zoomer.scaleStep;
             set
             {
-                m_Zoomer.scaleStep = value;
+                m_Zoomer.scaleStep = Math.Min(value, (maxScale - minScale) / 2);
                 ValidateTransform();
             }
         }
@@ -263,7 +230,7 @@ namespace GraphViewPlayer
             get => m_Zoomer.referenceScale;
             set
             {
-                m_Zoomer.referenceScale = value;
+                m_Zoomer.referenceScale = Math.Clamp(value, minScale, maxScale);
                 ValidateTransform();
             }
         }
@@ -282,9 +249,11 @@ namespace GraphViewPlayer
             transformScale.x = Mathf.Clamp(transformScale.x, minScale, maxScale);
             transformScale.y = Mathf.Clamp(transformScale.y, minScale, maxScale);
 
-            viewTransform.scale = transformScale;
+            UpdateViewTransform(viewTransform.position, transformScale);
         }
+        #endregion
 
+        #region Selection
         // ISelection implementation
         public List<ISelectable> selection { get; protected set; }
 
@@ -364,168 +333,203 @@ namespace GraphViewPlayer
         {
             RemoveFromSelectionNoUndoRecord(evt.target as ISelectable);
         }
+        #endregion
 
-        void OnEnterPanel(AttachToPanelEvent e)
+        #region Keybinding
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private static bool IsUnmodified(EventModifiers modifiers) => modifiers == EventModifiers.None;
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private static bool IsCommand(EventModifiers modifiers) => (modifiers & EventModifiers.Command) != 0;
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private static bool IsShift(EventModifiers modifiers) => modifiers == EventModifiers.Shift;
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private static bool IsFunction(EventModifiers modifiers) => (modifiers & EventModifiers.FunctionKey) != 0;
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private static bool IsCommandExclusive(EventModifiers modifiers) => modifiers == EventModifiers.Command;
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private static bool IsControlExclusive(EventModifiers modifiers) => modifiers == EventModifiers.Control;
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private static bool IsMac()
+            => Application.platform == RuntimePlatform.OSXEditor || Application.platform == RuntimePlatform.OSXPlayer;
+
+        [EventInterest(typeof(KeyDownEvent))]
+        protected override void ExecuteDefaultAction(EventBase baseEvent)
         {
-            if (isReframable && panel != null)
-                panel.visualTree.RegisterCallback<KeyDownEvent>(OnKeyDownShortcut);
-        }
+            if (baseEvent is not KeyDownEvent evt) return;
+            if (panel.GetCapturingElement(PointerId.mousePointerId) != null)  return;
 
-        void OnLeavePanel(DetachFromPanelEvent e)
-        {
-            if (isReframable)
-                panel.visualTree.UnregisterCallback<KeyDownEvent>(OnKeyDownShortcut);
-        }
-
-        void OnKeyDownShortcut(KeyDownEvent evt)
-        {
-            if (!isReframable)
-                return;
-
-            if (panel.GetCapturingElement(PointerId.mousePointerId) != null)
-                return;
-
-            Debug.Log(evt.character);
-            // switch (evt.character)
-            // {
-            //     case 'a':
-            //         result = FrameAll();
-            //         break;
-            //
-            //     case 'o':
-            //         result = FrameOrigin();
-            //         break;
-            //
-            //     case '[':
-            //         result = FramePrev();
-            //         break;
-            //
-            //     case ']':
-            //         result = FrameNext();
-            //         break;
-            //     case ' ':
-            //         result = OnInsertNodeKeyDown(evt);
-            //         break;
-            // }
-        }
-
-        internal void OnValidateCommand(ValidateCommandEvent evt)
-        {
-            if (panel.GetCapturingElement(PointerId.mousePointerId) != null)
-                return;
-
-            if ((evt.commandName == EventCommandNames.Copy && CanCopySelection())
-                || (evt.commandName == EventCommandNames.Paste && CanPaste())
-                || (evt.commandName == EventCommandNames.Duplicate && CanDuplicateSelection())
-                || (evt.commandName == EventCommandNames.Cut && CanCutSelection())
-                || ((evt.commandName == EventCommandNames.Delete || evt.commandName == EventCommandNames.SoftDelete) && CanDeleteSelection()))
+            // Check for CMD or CTRL
+            switch (evt.keyCode)
             {
-                evt.StopPropagation();
-                if (evt.imguiEvent != null)
+                case KeyCode.C:
+                    if (IsMac())
+                    {
+                        if (IsCommandExclusive(evt.modifiers))
+                        {
+                            OnCopy();
+                            evt.StopPropagation();
+                        }
+                    }
+                    else
+                    {
+                        if (IsControlExclusive(evt.modifiers))
+                        {
+                            OnCopy();
+                            evt.StopPropagation();
+                        }
+                    }
+                    break;
+                case KeyCode.V:
+                    if (IsMac())
+                    {
+                        if (IsCommandExclusive(evt.modifiers))
+                        {
+                            OnPaste();
+                            evt.StopPropagation();
+                        }
+                    }
+                    else
+                    {
+                        if (IsControlExclusive(evt.modifiers))
+                        {
+                            OnPaste();
+                            evt.StopPropagation();
+                        }
+                    }
+                    break;
+                case KeyCode.X:
+                    if (IsMac())
+                    {
+                        if (IsCommandExclusive(evt.modifiers))
+                        {
+                            OnCut();
+                            evt.StopPropagation();
+                        }
+                    }
+                    else
+                    {
+                        if (IsControlExclusive(evt.modifiers))
+                        {
+                            OnCut();
+                            evt.StopPropagation();
+                        }
+                    }
+                    break;
+                case KeyCode.D:
+                    if (IsMac())
+                    {
+                        if (IsCommandExclusive(evt.modifiers))
+                        {
+                            OnDuplicate();
+                            evt.StopPropagation();
+                        }
+                    }
+                    else
+                    {
+                        if (IsControlExclusive(evt.modifiers))
+                        {
+                            OnDuplicate();
+                            evt.StopPropagation();
+                        }
+                    }
+                    break;
+                case KeyCode.Z:
+                    if (IsMac())
+                    {
+                        if (IsCommandExclusive(evt.modifiers))
+                        {
+                            OnUndo();
+                            evt.StopPropagation();
+                        }
+                        else if (IsShift(evt.modifiers) && IsCommand(evt.modifiers))
+                        {
+                            OnRedo();
+                            evt.StopPropagation();
+                        }
+                    }
+                    else
+                    {
+                        if (IsControlExclusive(evt.modifiers))
+                        {
+                            OnUndo();
+                            evt.StopPropagation();
+                        }
+                    }
+                    break;
+                case KeyCode.Y:
+                    if (!IsMac() && IsControlExclusive(evt.modifiers))
+                    {
+                        OnRedo();
+                        evt.StopPropagation();
+                    }
+                    break;
+                case KeyCode.Delete:
+                    if (IsMac())
+                    {
+                        if (IsUnmodified(evt.modifiers))
+                        {
+                            OnDelete();
+                            evt.StopPropagation();
+                        }
+                    }
+                    else
+                    {
+                        if (IsUnmodified(evt.modifiers))
+                        {
+                            OnDelete();
+                            evt.StopPropagation();
+                        }
+                    }
+                    break;
+                case KeyCode.Backspace:
+                    if (IsMac() && IsCommand(evt.modifiers) && IsFunction(evt.modifiers))
+                    {
+                        OnDelete();
+                        evt.StopPropagation();
+                    }
+                    break;
+                case KeyCode.F:
+                    if (IsUnmodified(evt.modifiers))
+                    {
+                        Frame(FrameType.Selection);
+                        evt.StopPropagation();
+                    }
+                    break;
+            }
+        }
+        #endregion
+
+        // public static void CollectElements(IEnumerable<GraphElement> elements, HashSet<GraphElement> collectedElementSet, Func<GraphElement, bool> conditionFunc)
+        // {
+        //     foreach (var element in elements.Where(e => e != null && !collectedElementSet.Contains(e) && conditionFunc(e)))
+        //     {
+        //         var collectibleElement = element as ICollectibleElement;
+        //         collectibleElement?.CollectElements(collectedElementSet, conditionFunc);
+        //         collectedElementSet.Add(element);
+        //     }
+        // }
+
+        // protected internal virtual void CollectCopyableGraphElements(IEnumerable<GraphElement> elements, HashSet<GraphElement> elementsToCopySet)
+        // {
+        //     CollectElements(elements, elementsToCopySet, e => e.IsCopiable());
+        // }
+
+        public virtual void GetCompatiblePorts(ICollection<Port> toPopulate, Port startPort)
+        {
+            foreach (Port endPort in ports)
+            {
+                if (startPort.direction != endPort.direction // Input to output only 
+                    && startPort.node != endPort.node // Not the same port
+                    && !startPort.IsConnectedTo(endPort) // Not already connected
+                    && endPort.CanConnectToMore() // Not Capacity single and already connected
+                )
                 {
-                    evt.imguiEvent.Use();
+                    toPopulate.Add(endPort);
                 }
             }
-            else if (evt.commandName == EventCommandNames.FrameSelected)
-            {
-                evt.StopPropagation();
-                if (evt.imguiEvent != null)
-                {
-                    evt.imguiEvent.Use();
-                }
-            }
         }
 
-        public enum AskUser
-        {
-            AskUser,
-            DontAskUser
-        }
-
-        internal void OnExecuteCommand(ExecuteCommandEvent evt)
-        {
-            if (panel.GetCapturingElement(PointerId.mousePointerId) != null)
-                return;
-
-            if (evt.commandName == EventCommandNames.Copy)
-            {
-                CopySelection();
-                evt.StopPropagation();
-            }
-            else if (evt.commandName == EventCommandNames.Paste)
-            {
-                Paste();
-                evt.StopPropagation();
-            }
-            else if (evt.commandName == EventCommandNames.Duplicate)
-            {
-                DuplicateSelection();
-                evt.StopPropagation();
-            }
-            else if (evt.commandName == EventCommandNames.Cut)
-            {
-                CutSelection();
-                evt.StopPropagation();
-            }
-            else if (evt.commandName == EventCommandNames.Delete)
-            {
-                DeleteSelection(AskUser.DontAskUser);
-                evt.StopPropagation();
-            }
-            else if (evt.commandName == EventCommandNames.SoftDelete)
-            {
-                DeleteSelection(AskUser.AskUser);
-                evt.StopPropagation();
-            }
-            else if (evt.commandName == EventCommandNames.FrameSelected)
-            {
-                // FrameSelection();
-                Debug.Log("FRAME");
-                evt.StopPropagation();
-            }
-
-            if (evt.isPropagationStopped && evt.imguiEvent != null)
-            {
-                Debug.Log("IMGUI EVT");
-                evt.imguiEvent.Use();
-            }
-        }
-
-        public static void CollectElements(IEnumerable<GraphElement> elements, HashSet<GraphElement> collectedElementSet, Func<GraphElement, bool> conditionFunc)
-        {
-            foreach (var element in elements.Where(e => e != null && !collectedElementSet.Contains(e) && conditionFunc(e)))
-            {
-                var collectibleElement = element as ICollectibleElement;
-                collectibleElement?.CollectElements(collectedElementSet, conditionFunc);
-                collectedElementSet.Add(element);
-            }
-        }
-
-        protected internal virtual void CollectCopyableGraphElements(IEnumerable<GraphElement> elements, HashSet<GraphElement> elementsToCopySet)
-        {
-            CollectElements(elements, elementsToCopySet, e => e.IsCopiable());
-        }
-
-        protected abstract bool CanCopySelection();
-        protected abstract void CopySelection();
-        protected abstract bool CanCutSelection();
-        protected abstract void CutSelection();
-        protected abstract bool CanPaste();
-        protected abstract void Paste();
-        protected abstract bool CanDuplicateSelection();
-        protected abstract void DuplicateSelection();
-        protected abstract bool CanDeleteSelection();
-        protected abstract void DeleteSelection(AskUser askUser);
-
-        public virtual List<Port> GetCompatiblePorts(Port startPort)
-        {
-            return (from p in ports.ToList()
-                    where p.direction != startPort.direction 
-                          && p.node != startPort.node 
-                          && !p.IsConnected(startPort)
-                    select p).ToList();
-        }
-
+        #region Add / Remove Elements from Heirarchy
         public void AddElement(GraphElement graphElement)
         {
             int newLayer = graphElement.layer;
@@ -541,128 +545,30 @@ namespace GraphViewPlayer
             graphElement.RemoveFromHierarchy();
         }
 
-        private void CollectDeletableGraphElements(IEnumerable<GraphElement> elements, HashSet<GraphElement> elementsToRemoveSet)
+        // private void CollectDeletableGraphElements(IEnumerable<GraphElement> elements, HashSet<GraphElement> elementsToRemoveSet)
+        // {
+        //     CollectElements(elements, elementsToRemoveSet, e => (e.capabilities & Capabilities.Deletable) == Capabilities.Deletable);
+        // }
+
+        // public virtual void DeleteSelection()
+        // {
+        //     var elementsToRemoveSet = new HashSet<GraphElement>();
+        //
+        //     CollectDeletableGraphElements(selection.OfType<GraphElement>(), elementsToRemoveSet);
+        //
+        //     DeleteElements(elementsToRemoveSet);
+        //
+        //     selection.Clear();
+        // }
+
+        public void ConnectPorts(Port input, Port output)
         {
-            CollectElements(elements, elementsToRemoveSet, e => (e.capabilities & Capabilities.Deletable) == Capabilities.Deletable);
+            AddElement(input.ConnectTo(output));
         }
+        #endregion
 
-        public virtual void DeleteSelection()
-        {
-            var elementsToRemoveSet = new HashSet<GraphElement>();
-
-            CollectDeletableGraphElements(selection.OfType<GraphElement>(), elementsToRemoveSet);
-
-            DeleteElements(elementsToRemoveSet);
-
-            selection.Clear();
-        }
-
-        public void DeleteElements(IEnumerable<GraphElement> elementsToRemove)
-        {
-            m_ElementsToRemove.Clear();
-            foreach (GraphElement element in elementsToRemove)
-                m_ElementsToRemove.Add(element);
-
-            List<GraphElement> elementsToRemoveList = m_ElementsToRemove;
-            if (graphViewChanged != null)
-            {
-                elementsToRemoveList = graphViewChanged(m_GraphViewChange).elementsToRemove;
-            }
-
-            // Notify the ends of connections that the connection is going way.
-            foreach (var connection in elementsToRemoveList.OfType<Edge>())
-            {
-                if (connection.output != null)
-                    connection.output.Disconnect(connection);
-
-                if (connection.input != null)
-                    connection.input.Disconnect(connection);
-
-                connection.output = null;
-                connection.input = null;
-            }
-
-            foreach (GraphElement element in elementsToRemoveList)
-            {
-                RemoveElement(element);
-            }
-        }
-#region Framing
-/*
-        public EventPropagation FrameAll()
-        {
-            return Frame(FrameType.All);
-        }
-
-        public EventPropagation FrameSelection()
-        {
-            return Frame(FrameType.Selection);
-        }
-
-        public EventPropagation FrameOrigin()
-        {
-            return Frame(FrameType.Origin);
-        }
-
-        public EventPropagation FramePrev()
-        {
-            if (contentViewContainer.childCount == 0)
-                return EventPropagation.Continue;
-
-            List<GraphElement> childrenList = graphElements.ToList().Where(e => e.IsSelectable() && !(e is Edge)).OrderByDescending(e => e.controlid).ToList();
-            return FramePrevNext(childrenList);
-        }
-
-        public EventPropagation FrameNext()
-        {
-            if (contentViewContainer.childCount == 0)
-                return EventPropagation.Continue;
-
-            List<GraphElement> childrenList = graphElements.ToList().Where(e => e.IsSelectable() && !(e is Edge)).OrderBy(e => e.controlid).ToList();
-            return FramePrevNext(childrenList);
-        }
-
-        public EventPropagation FramePrev(Func<GraphElement, bool> predicate)
-        {
-            if (this.contentViewContainer.childCount == 0)
-                return EventPropagation.Continue;
-            List<GraphElement> list = graphElements.ToList().Where(predicate).ToList();
-            list.Reverse();
-            return this.FramePrevNext(list);
-        }
-
-        public EventPropagation FrameNext(Func<GraphElement, bool> predicate)
-        {
-            if (this.contentViewContainer.childCount == 0)
-                return EventPropagation.Continue;
-            return this.FramePrevNext(graphElements.ToList().Where(predicate).ToList());
-        }
-
-        // TODO: Do we limit to GraphElements or can we tab through ISelectable's?
-        EventPropagation FramePrevNext(List<GraphElement> childrenList)
-        {
-            GraphElement graphElement = null;
-
-            // Start from current selection, if any
-            if (selection.Count != 0)
-                graphElement = selection[0] as GraphElement;
-
-            int idx = childrenList.IndexOf(graphElement);
-
-            if (idx >= 0 && idx < childrenList.Count - 1)
-                graphElement = childrenList[idx + 1];
-            else
-                graphElement = childrenList[0];
-
-            // New selection...
-            ClearSelection();
-            AddToSelection(graphElement);
-
-            // ...and frame this new selection
-            return Frame(FrameType.Selection);
-        }
-
-        EventPropagation Frame(FrameType frameType)
+        #region Framing
+        protected void Frame(FrameType frameType)
         {
             Rect rectToFit = contentViewContainer.layout;
             Vector3 frameTranslation = Vector3.zero;
@@ -674,52 +580,41 @@ namespace GraphViewPlayer
 
             if (frameType == FrameType.Selection)
             {
-                VisualElement graphElement = selection[0] as GraphElement;
-                if (graphElement != null)
-                {
-                    // Edges don't have a size. Only their internal EdgeControl have a size.
-                    if (graphElement is Edge)
-                        graphElement = (graphElement as Edge).edgeControl;
-                    rectToFit = graphElement.ChangeCoordinatesTo(contentViewContainer, graphElement.rect());
-                }
-
-                rectToFit = selection.Cast<GraphElement>()
-                    .Aggregate(rectToFit, (current, currentGraphElement) =>
-                    {
-                        VisualElement currentElement = currentGraphElement;
-                        if (currentGraphElement is Edge)
-                            currentElement = (currentGraphElement as Edge).edgeControl;
-                        return RectUtils.Encompass(current, currentElement.ChangeCoordinatesTo(contentViewContainer, currentElement.rect()));
-                    });
-                CalculateFrameTransform(rectToFit, layout, k_FrameBorder, out frameTranslation, out frameScaling);
+                rectToFit = CalculateRectToFitSelection(contentViewContainer);
             }
             else if (frameType == FrameType.All)
             {
                 rectToFit = CalculateRectToFitAll(contentViewContainer);
-                CalculateFrameTransform(rectToFit, layout, k_FrameBorder, out frameTranslation, out frameScaling);
-            } // else keep going if (frameType == FrameType.Origin)
-
-            if (m_FrameAnimate)
-            {
-                // TODO Animate framing
-                // RMAnimation animation = new RMAnimation();
-                // parent.Animate(parent)
-                //       .Lerp(new string[] {"m_Scale", "m_Translation"},
-                //             new object[] {parent.scale, parent.translation},
-                //             new object[] {frameScaling, frameTranslation}, 0.08f);
-            }
-            else
-            {
-                Matrix4x4.TRS(frameTranslation, Quaternion.identity, frameScaling);
-
-                UpdateViewTransform(frameTranslation, frameScaling);
             }
 
+            CalculateFrameTransform(rectToFit, layout, k_FrameBorder, out frameTranslation, out frameScaling);
+            Matrix4x4.TRS(frameTranslation, Quaternion.identity, frameScaling);
+            UpdateViewTransform(frameTranslation, frameScaling);
             contentViewContainer.MarkDirtyRepaint();
+        }
 
-            UpdatePersistedViewTransform();
+        public virtual Rect CalculateRectToFitSelection(VisualElement container)
+        {
+            Rect rectToFit = container.layout;
+            VisualElement graphElement = selection[0] as GraphElement;
+            if (graphElement != null)
+            {
+                // Edges don't have a size. Only their internal EdgeControl have a size.
+                if (graphElement is Edge)
+                    graphElement = (graphElement as Edge).edgeControl;
+                rectToFit = graphElement.ChangeCoordinatesTo(contentViewContainer, graphElement.Rect());
+            }
 
-            return EventPropagation.Stop;
+            rectToFit = selection.Cast<GraphElement>()
+                .Aggregate(rectToFit, (current, currentGraphElement) =>
+                {
+                    VisualElement currentElement = currentGraphElement;
+                    if (currentGraphElement is Edge)
+                        currentElement = (currentGraphElement as Edge).edgeControl;
+                    return RectUtils.Encompass(current, currentElement.ChangeCoordinatesTo(contentViewContainer, currentElement.Rect()));
+                });
+
+            return rectToFit;
         }
 
         public virtual Rect CalculateRectToFitAll(VisualElement container)
@@ -729,47 +624,51 @@ namespace GraphViewPlayer
 
             graphElements.ForEach(ge =>
             {
-                if (ge is Edge || ge is Port)
+                if (ge is Edge)
                 {
                     return;
                 }
 
                 if (!reachedFirstChild)
                 {
-                    rectToFit = ge.ChangeCoordinatesTo(contentViewContainer, ge.rect());
+                    rectToFit = ge.ChangeCoordinatesTo(contentViewContainer, ge.Rect());
                     reachedFirstChild = true;
                 }
                 else
                 {
-                    rectToFit = RectUtils.Encompass(rectToFit, ge.ChangeCoordinatesTo(contentViewContainer, ge.rect()));
+                    rectToFit = RectUtils.Encompass(rectToFit, ge.ChangeCoordinatesTo(contentViewContainer, ge.Rect()));
                 }
             });
 
             return rectToFit;
         }
 
-        public static void CalculateFrameTransform(Rect rectToFit, Rect clientRect, int border, out Vector3 frameTranslation, out Vector3 frameScaling)
+        private float ZoomRequiredToFrameRect(Rect rectToFit, Rect clientRect, int border)
         {
             // bring slightly smaller screen rect into GUI space
-            var screenRect = new Rect
+            Rect screenRect = new Rect
             {
                 xMin = border,
                 xMax = clientRect.width - border,
                 yMin = border,
                 yMax = clientRect.height - border
             };
+            Rect identity = GUIUtility.ScreenToGUIRect(screenRect);
+            return Math.Min(identity.width / rectToFit.width, identity.height / rectToFit.height);
+        }
 
+        public void CalculateFrameTransform(Rect rectToFit, Rect clientRect, int border, out Vector3 frameTranslation, out Vector3 frameScaling)
+        {
             Matrix4x4 m = GUI.matrix;
             GUI.matrix = Matrix4x4.TRS(Vector3.zero, Quaternion.identity, Vector3.one);
-            Rect identity = GUIUtility.ScreenToGUIRect(screenRect);
 
             // measure zoom level necessary to fit the canvas rect into the screen rect
-            float zoomLevel = Math.Min(identity.width / rectToFit.width, identity.height / rectToFit.height);
+            float zoomLevel = ZoomRequiredToFrameRect(rectToFit, clientRect, border);
 
             // clamp
-            zoomLevel = Mathf.Clamp(zoomLevel, ContentZoomer.DefaultMinScale, 1.0f);
+            zoomLevel = Mathf.Clamp(zoomLevel, minScale, maxScale);
 
-            var transform = Matrix4x4.TRS(Vector3.zero, Quaternion.identity, new Vector3(zoomLevel, zoomLevel, 1.0f));
+            var transformMatrix = Matrix4x4.TRS(Vector3.zero, Quaternion.identity, new Vector3(zoomLevel, zoomLevel, 1.0f));
 
             var edge = new Vector2(clientRect.width, clientRect.height);
             var origin = new Vector2(0, 0);
@@ -780,9 +679,9 @@ namespace GraphViewPlayer
                 max = edge
             };
 
-            var parentScale = new Vector3(transform.GetColumn(0).magnitude,
-                transform.GetColumn(1).magnitude,
-                transform.GetColumn(2).magnitude);
+            var parentScale = new Vector3(transformMatrix.GetColumn(0).magnitude,
+                transformMatrix.GetColumn(1).magnitude,
+                transformMatrix.GetColumn(2).magnitude);
             Vector2 offset = r.center - (rectToFit.center * parentScale.x);
 
             // Update output values before leaving
@@ -791,41 +690,27 @@ namespace GraphViewPlayer
 
             GUI.matrix = m;
         }
-*/
-#endregion
+        #endregion
+
+        #region Command Handlers
+        protected internal abstract void OnCopy();
+        protected internal abstract void OnCut();
+        protected internal abstract void OnPaste();
+        protected internal abstract void OnDuplicate();
+        protected internal abstract void OnDelete();
+        protected internal abstract void OnUndo();
+        protected internal abstract void OnRedo();
+        protected internal abstract void OnEdgeCreate(Edge edge);
+        protected internal abstract void OnEdgeDelete(Edge edge);
+        protected internal abstract void OnElementMoved(GraphElement element);
+        protected internal abstract void OnViewportChanged();
+        #endregion
     }
 
     #region Helpers
-    internal static class EventCommandNames
-    {
-        public const string Cut = "Cut";
-        public const string Copy = "Copy";
-        public const string Paste = "Paste";
-        public const string SelectAll = "SelectAll";
-        public const string DeselectAll = "DeselectAll";
-        public const string InvertSelection = "InvertSelection";
-        public const string Duplicate = "Duplicate";
-        public const string Rename = "Rename";
-        public const string Delete = "Delete";
-        public const string SoftDelete = "SoftDelete";
-        public const string Find = "Find";
-        public const string SelectChildren = "SelectChildren";
-        public const string SelectPrefabRoot = "SelectPrefabRoot";
-        public const string UndoRedoPerformed = "UndoRedoPerformed";
-        public const string OnLostFocus = "OnLostFocus";
-        public const string NewKeyboardFocus = "NewKeyboardFocus";
-        public const string ModifierKeysChanged = "ModifierKeysChanged";
-        public const string EyeDropperUpdate = "EyeDropperUpdate";
-        public const string EyeDropperClicked = "EyeDropperClicked";
-        public const string EyeDropperCancelled = "EyeDropperCancelled";
-        public const string ColorPickerChanged = "ColorPickerChanged";
-        public const string FrameSelected = "FrameSelected";
-        public const string FrameSelectedWithLock = "FrameSelectedWithLock";
-    }
-
     internal static class VisualElementExtensions
     {
-        internal static Rect rect(this VisualElement ve) => new(Vector2.zero, ve.layout.size);
+        internal static Rect Rect(this VisualElement ve) => new(Vector2.zero, ve.layout.size);
     }
     #endregion
 }

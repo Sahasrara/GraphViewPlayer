@@ -25,8 +25,6 @@ namespace GraphViewPlayer
         GraphElement selectedElement { get; set; }
         GraphElement clickedElement { get; set; }
 
-        private GraphViewChange m_GraphViewChange;
-        private readonly List<GraphElement> m_MovedElements;
         private readonly List<VisualElement> m_DropTargetPickList;
         IDropTarget GetDropTargetAt(Vector2 mousePosition, IEnumerable<VisualElement> exclusionList)
         {
@@ -77,12 +75,8 @@ namespace GraphViewPlayer
             panSpeed = new Vector2(1, 1);
             clampToParentEdges = false;
             
-            m_MovedElements = new();
             m_DropTargetPickList = new();
             m_OriginalPos = new();
-
-            m_MovedElements = new List<GraphElement>();
-            m_GraphViewChange.movedElements = m_MovedElements;
         }
 
         protected override void RegisterCallbacksOnTarget()
@@ -486,16 +480,14 @@ namespace GraphViewPlayer
                 {
                     if (m_Dragging)
                     {
-                        m_MovedElements.AddRange(m_OriginalPos.Keys);
-
-                        var graphView = target as GraphView;
-                        if (graphView != null && graphView.graphViewChanged != null)
+                        // Notify Listeners
+                        if (target is GraphView graphView)
                         {
-                            KeyValuePair<GraphElement, OriginalPos> firstPos = m_OriginalPos.First();
-                            m_GraphViewChange.moveDelta = firstPos.Key.GetPosition().position - firstPos.Value.pos.position;
-                            graphView.graphViewChanged(m_GraphViewChange);
+                            foreach (GraphElement graphElement in m_OriginalPos.Keys)
+                            {
+                                graphView.OnElementMoved(graphElement);
+                            }
                         }
-                        m_MovedElements.Clear();
                     }
 
                     m_PanSchedule.Pause();

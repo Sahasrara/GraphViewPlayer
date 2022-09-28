@@ -42,6 +42,9 @@ namespace GraphViewPlayer
             set { if (m_TitleLabel != null) m_TitleLabel.text = value; }
         }
 
+        public UQueryState<Port> inputPorts;
+        public UQueryState<Port> outputPorts;
+
         public override Rect GetPosition()
         {
             if (resolvedStyle.position == Position.Absolute)
@@ -55,9 +58,6 @@ namespace GraphViewPlayer
             style.left = newPos.x;
             style.top = newPos.y;
         }
-
-        protected virtual void OnPortRemoved(Port port)
-        {}
 
         public virtual Port InstantiatePort(Orientation orientation, Direction direction, Port.Capacity capacity)
         {
@@ -77,7 +77,7 @@ namespace GraphViewPlayer
             titleContainer = new() { pickingMode = PickingMode.Ignore };
             titleContainer.AddToClassList("node-title");
             titleContainer.Add(m_TitleLabel);
-            this.Add(titleContainer);
+            hierarchy.Add(titleContainer);
 
             // Input Container
             inputContainer = new() { pickingMode = PickingMode.Ignore };
@@ -92,12 +92,12 @@ namespace GraphViewPlayer
             topContainer.AddToClassList("node-io");
             topContainer.Add(inputContainer);
             topContainer.Add(outputContainer);
-            this.Add(topContainer);
+            hierarchy.Add(topContainer);
 
             // Extension Container
             extensionContainer = new() { pickingMode = PickingMode.Ignore };
             extensionContainer.AddToClassList("node-extension");
-            this.Add(extensionContainer);
+            hierarchy.Add(extensionContainer);
 
             elementTypeColor = new Color(0.9f, 0.9f, 0.9f, 0.5f);
 
@@ -113,6 +113,10 @@ namespace GraphViewPlayer
                 // | Capabilities.Groupable
                 ;
             usageHints = UsageHints.DynamicTransform;
+
+            // Cache Queries
+            inputPorts = inputContainer.Query<Port>().Build();
+            outputPorts = outputContainer.Query<Port>().Build();
         }
 
         public override void OnSelected()
@@ -127,74 +131,72 @@ namespace GraphViewPlayer
             RemoveFromClassList("node-selected");
         }
 
-        void AddConnectionsToDeleteSet(VisualElement container, ref HashSet<GraphElement> toDelete)
-        {
-            List<GraphElement> toDeleteList = new List<GraphElement>();
-            container.Query<Port>().ForEach(elem =>
-            {
-                if (elem.connected)
-                {
-                    foreach (Edge c in elem.connections)
-                    {
-                        if ((c.capabilities & Capabilities.Deletable) == 0)
-                            continue;
+        // void AddConnectionsToDeleteSet(VisualElement container, ref HashSet<GraphElement> toDelete)
+        // {
+        //     List<GraphElement> toDeleteList = new List<GraphElement>();
+        //     container.Query<Port>().ForEach(elem =>
+        //     {
+        //         if (elem.connected)
+        //         {
+        //             foreach (Edge c in elem.connections)
+        //             {
+        //                 if ((c.capabilities & Capabilities.Deletable) == 0)
+        //                     continue;
+        //
+        //                 toDeleteList.Add(c);
+        //             }
+        //         }
+        //     });
+        //
+        //     toDelete.UnionWith(toDeleteList);
+        // }
 
-                        toDeleteList.Add(c);
-                    }
-                }
-            });
+        // void DisconnectAll(DropdownMenuAction a)
+        // {
+        //     HashSet<GraphElement> toDelete = new HashSet<GraphElement>();
+        //
+        //     AddConnectionsToDeleteSet(inputContainer, ref toDelete);
+        //     AddConnectionsToDeleteSet(outputContainer, ref toDelete);
+        //     toDelete.Remove(null);
+        //
+        //     if (graphView != null)
+        //     {
+        //         graphView.DeleteElements(toDelete);
+        //     }
+        //     else
+        //     {
+        //         Debug.Log("Disconnecting nodes that are not in a GraphView will not work.");
+        //     }
+        // }
 
-            toDelete.UnionWith(toDeleteList);
-        }
-
-        void DisconnectAll(DropdownMenuAction a)
-        {
-            HashSet<GraphElement> toDelete = new HashSet<GraphElement>();
-
-            AddConnectionsToDeleteSet(inputContainer, ref toDelete);
-            AddConnectionsToDeleteSet(outputContainer, ref toDelete);
-            toDelete.Remove(null);
-
-            if (graphView != null)
-            {
-                graphView.DeleteElements(toDelete);
-            }
-            else
-            {
-                Debug.Log("Disconnecting nodes that are not in a GraphView will not work.");
-            }
-        }
-
-        DropdownMenuAction.Status DisconnectAllStatus(DropdownMenuAction a)
-        {
-            VisualElement[] containers =
-            {
-                inputContainer, outputContainer
-            };
-
-            foreach (var container in containers)
-            {
-                var currentInputs = container.Query<Port>().ToList();
-                foreach (var elem in currentInputs)
-                {
-                    if (elem.connected)
-                    {
-                        return DropdownMenuAction.Status.Normal;
-                    }
-                }
-            }
-
-            return DropdownMenuAction.Status.Disabled;
-        }
+        // DropdownMenuAction.Status DisconnectAllStatus(DropdownMenuAction a)
+        // {
+        //     VisualElement[] containers =
+        //     {
+        //         inputContainer, outputContainer
+        //     };
+        //
+        //     foreach (var container in containers)
+        //     {
+        //         var currentInputs = container.Query<Port>().ToList();
+        //         foreach (var elem in currentInputs)
+        //         {
+        //             if (elem.connected)
+        //             {
+        //                 return DropdownMenuAction.Status.Normal;
+        //             }
+        //         }
+        //     }
+        //
+        //     return DropdownMenuAction.Status.Disabled;
+        // }
 
         void CollectConnectedEdges(HashSet<GraphElement> edgeSet)
         {
-            edgeSet.UnionWith(inputContainer.Children().OfType<Port>().SelectMany(c => c.connections)
-                .Where(d => (d.capabilities & Capabilities.Deletable) != 0)
-                .Cast<GraphElement>());
-            edgeSet.UnionWith(outputContainer.Children().OfType<Port>().SelectMany(c => c.connections)
-                .Where(d => (d.capabilities & Capabilities.Deletable) != 0)
-                .Cast<GraphElement>());
+            edgeSet.UnionWith(inputPorts.SelectMany(c => c.connections)
+                .Where(d => (d.capabilities & Capabilities.Deletable) != 0));
+            edgeSet.UnionWith(outputPorts.SelectMany(c => c.connections)
+                .Where(d => (d.capabilities & Capabilities.Deletable) != 0));
         }
 
         public virtual void CollectElements(HashSet<GraphElement> collectedElementSet, Func<GraphElement, bool> conditionFunc)

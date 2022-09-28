@@ -4,6 +4,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using UnityEngine;
 using UnityEngine.UIElements;
 
@@ -31,7 +32,6 @@ namespace GraphViewPlayer
         protected List<Port> m_CompatiblePorts;
         private Edge m_GhostEdge;
         protected GraphView m_GraphView;
-        protected readonly IEdgeConnectorListener m_Listener;
 
         private IVisualElementScheduledItem m_PanSchedule;
         private Vector3 m_PanDiff = Vector3.zero;
@@ -39,10 +39,10 @@ namespace GraphViewPlayer
 
         public bool resetPositionOnPan { get; set; }
 
-        public EdgeDragHelper(IEdgeConnectorListener listener)
+        public EdgeDragHelper()
         {
-            m_Listener = listener;
             resetPositionOnPan = true;
+            m_CompatiblePorts = new();
             Reset();
         }
 
@@ -52,53 +52,44 @@ namespace GraphViewPlayer
 
         public override void Reset(bool didConnect = false)
         {
-            if (m_CompatiblePorts != null)
+            if (m_CompatiblePorts.Count() > 0)
             {
                 // Reset the highlights.
                 m_GraphView.ports.ForEach((p) => {
                     p.OnStopEdgeDragging();
                 });
-                m_CompatiblePorts = null;
+
+                // Clear Compatible Ports
+                m_CompatiblePorts.Clear();
             }
 
             // Clean up ghost edge.
-            if ((m_GhostEdge != null) && (m_GraphView != null))
-            {
-                m_GraphView.RemoveElement(m_GhostEdge);
-            }
+            CleanGhostEdge();
 
             if (m_WasPanned)
             {
                 if (!resetPositionOnPan || didConnect)
                 {
-                    Vector3 p = m_GraphView.contentViewContainer.transform.position;
-                    Vector3 s = m_GraphView.contentViewContainer.transform.scale;
-                    m_GraphView.UpdateViewTransform(p, s);
+                    m_GraphView.UpdateViewTransform(
+                        m_GraphView.viewTransform.position, m_GraphView.viewTransform.scale);
                 }
             }
 
             if (m_PanSchedule != null)
                 m_PanSchedule.Pause();
 
-            if (m_GhostEdge != null)
-            {
-                m_GhostEdge.input = null;
-                m_GhostEdge.output = null;
-            }
-
             if (draggedPort != null && !didConnect)
             {
-                draggedPort.portCapLit = false;
                 draggedPort = null;
             }
 
-            // if (edgeCandidate != null)
-            // {
-                // edgeCandidate.SetEnabled(true);
-            // }
-
-            m_GhostEdge = null;
-            edgeCandidate = null;
+            if (edgeCandidate != null)
+            {
+                m_GraphView.RemoveElement(edgeCandidate);
+                edgeCandidate.input = null;
+                edgeCandidate.output = null;
+                edgeCandidate = null;
+            }
 
             m_GraphView = null;
         }
@@ -127,7 +118,6 @@ namespace GraphViewPlayer
             bool startFromOutput = (draggedPort.direction == Direction.Output);
 
             edgeCandidate.candidatePosition = mousePosition;
-            // edgeCandidate.SetEnabled(false);
 
             if (startFromOutput)
             {
@@ -140,10 +130,7 @@ namespace GraphViewPlayer
                 edgeCandidate.input = draggedPort;
             }
 
-            draggedPort.portCapLit = true;
-
-
-            m_CompatiblePorts = m_GraphView.GetCompatiblePorts(draggedPort);
+            m_GraphView.GetCompatiblePorts(m_CompatiblePorts, draggedPort);
 
             // Only light compatible anchors when dragging an edge.
             m_GraphView.ports.ForEach((p) =>  {
@@ -223,37 +210,15 @@ namespace GraphViewPlayer
                 if (edgeCandidate.output == null)
                 {
                     m_GhostEdge.input = edgeCandidate.input;
-                    if (m_GhostEdge.output != null)
-                        m_GhostEdge.output.portCapLit = false;
                     m_GhostEdge.output = endPort;
-                    m_GhostEdge.output.portCapLit = true;
                 }
                 else
                 {
-                    if (m_GhostEdge.input != null)
-                        m_GhostEdge.input.portCapLit = false;
                     m_GhostEdge.input = endPort;
-                    m_GhostEdge.input.portCapLit = true;
                     m_GhostEdge.output = edgeCandidate.output;
                 }
             }
-            else if (m_GhostEdge != null)
-            {
-                if (edgeCandidate.input == null)
-                {
-                    if (m_GhostEdge.input != null)
-                        m_GhostEdge.input.portCapLit = false;
-                }
-                else
-                {
-                    if (m_GhostEdge.output != null)
-                        m_GhostEdge.output.portCapLit = false;
-                }
-                m_GraphView.RemoveElement(m_GhostEdge);
-                m_GhostEdge.input = null;
-                m_GhostEdge.output = null;
-                m_GhostEdge = null;
-            }
+            else CleanGhostEdge();
         }
 
         private void Pan(TimerState ts)
@@ -265,8 +230,6 @@ namespace GraphViewPlayer
 
         public override void HandleMouseUp(MouseUpEvent evt)
         {
-            bool didConnect = false;
-
             Vector2 mousePosition = evt.mousePosition;
 
             // Reset the highlights.
@@ -275,33 +238,9 @@ namespace GraphViewPlayer
             });
 
             // Clean up ghost edges.
-            if (m_GhostEdge != null)
-            {
-                if (m_GhostEdge.input != null)
-                    m_GhostEdge.input.portCapLit = false;
-                if (m_GhostEdge.output != null)
-                    m_GhostEdge.output.portCapLit = false;
-
-                m_GraphView.RemoveElement(m_GhostEdge);
-                m_GhostEdge.input = null;
-                m_GhostEdge.output = null;
-                m_GhostEdge = null;
-            }
+            CleanGhostEdge();
 
             Port endPort = GetEndPort(mousePosition);
-
-            if (endPort == null && m_Listener != null)
-            {
-                m_Listener.OnDropOutsidePort(edgeCandidate, mousePosition);
-            }
-
-            // edgeCandidate.SetEnabled(true);
-
-            if (edgeCandidate.input != null)
-                edgeCandidate.input.portCapLit = false;
-
-            if (edgeCandidate.output != null)
-                edgeCandidate.output.portCapLit = false;
 
             // If it is an existing valid edge then delete and notify the model (using DeleteElements()).
             if (edgeCandidate.input != null && edgeCandidate.output != null)
@@ -309,19 +248,25 @@ namespace GraphViewPlayer
                 // Save the current input and output before deleting the edge as they will be reset
                 Port oldInput = edgeCandidate.input;
                 Port oldOutput = edgeCandidate.output;
-
-                m_GraphView.DeleteElements(new[] { edgeCandidate });
-
+            
+                Debug.Log("HERE");
+                // m_GraphView.OnEdgeDelete(edgeCandidate);
+                edgeCandidate.Disconnect();
+                m_GraphView.RemoveElement(edgeCandidate);
+            
                 // Restore the previous input and output
+                edgeCandidate = new TEdge();
                 edgeCandidate.input = oldInput;
                 edgeCandidate.output = oldOutput;
             }
-            // otherwise, if it is an temporary edge then just remove it as it is not already known my the model
+            // otherwise, if it is an temporary edge then just remove it as it is not already known by the model
             else
             {
                 m_GraphView.RemoveElement(edgeCandidate);
             }
 
+            bool didConnect;
+            // This is a connection
             if (endPort != null)
             {
                 if (endPort.direction == Direction.Output)
@@ -329,19 +274,24 @@ namespace GraphViewPlayer
                 else
                     edgeCandidate.input = endPort;
 
-                m_Listener.OnDrop(m_GraphView, edgeCandidate);
+                // Notify 
+                m_GraphView.AddElement(edgeCandidate);
+                Debug.Log("NEW CONNECTION");
+                // m_GraphView.OnEdgeCreate(edgeCandidate);
+                
                 didConnect = true;
             }
+            // This is a disconnection
             else
             {
                 edgeCandidate.output = null;
                 edgeCandidate.input = null;
+                didConnect = false;
             }
 
             edgeCandidate.ResetLayer();
-
             edgeCandidate = null;
-            m_CompatiblePorts = null;
+            m_CompatiblePorts.Clear();
             Reset(didConnect);
         }
 
@@ -383,6 +333,18 @@ namespace GraphViewPlayer
             }
 
             return endPort;
+        }
+
+        private void CleanGhostEdge()
+        {
+            if (m_GhostEdge != null)
+            {
+                // TODO pool these? Or just ditch them entirely???
+                m_GraphView?.RemoveElement(m_GhostEdge);
+                m_GhostEdge.input = null;
+                m_GhostEdge.output = null;
+                m_GhostEdge = null;
+            }
         }
     }
 }

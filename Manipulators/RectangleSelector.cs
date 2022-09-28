@@ -4,7 +4,6 @@
 
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using UnityEngine;
 using UnityEngine.UIElements;
 
@@ -13,8 +12,9 @@ namespace GraphViewPlayer
     public class RectangleSelector : MouseManipulator
     {
         private readonly RectangleSelect m_Rectangle;
-        bool m_Active;
+        private bool m_Active;
         private GraphView m_GraphView;
+        private List<ISelectable> m_NewSelection;
 
         public RectangleSelector()
         {
@@ -34,6 +34,7 @@ namespace GraphViewPlayer
             m_Rectangle.style.bottom = 0f;
             m_Rectangle.style.right = 0f;
             m_Active = false;
+            m_NewSelection = new();
         }
 
         // get the axis aligned bound
@@ -91,7 +92,7 @@ namespace GraphViewPlayer
             m_GraphView = base.target as GraphView;
             if (m_GraphView == null) return;
 
-            // Don't start marquee unless the click started on the RUIGraphView
+            // Don't start marquee unless the click started on the GraphView
             if (e.target is not GraphView) return;
 
             // Clear selection unless this was an action key + click
@@ -135,32 +136,27 @@ namespace GraphViewPlayer
 
             List<ISelectable> selection = graphView.selection;
 
-            // If a stacknode child already exists in the selection, adding more to the selection via drag-select is not supported.
-            bool hasStackChild = selection.Any(ge => (ge is GraphElement) && ((GraphElement)ge).IsStackable());
-            if (!hasStackChild)
+            // a copy is necessary because AddToSelection might cause a SendElementToFront which will change the order.
+            graphView.graphElements.ForEach(child =>
             {
-                // a copy is necessary because Add To selection might cause a SendElementToFront which will change the order.
-                List<ISelectable> newSelection = new List<ISelectable>();
-                graphView.graphElements.ForEach(child =>
+                var localSelRect = graphView.contentViewContainer.ChangeCoordinatesTo(child, selectionRect);
+                if (child.IsSelectable() && child.Overlaps(localSelRect))
                 {
-                    var localSelRect = graphView.contentViewContainer.ChangeCoordinatesTo(child, selectionRect);
-                    if (child.IsSelectable() && child.Overlaps(localSelRect) && !child.IsStackable()) // Exclude StackNode children
-                    {
-                        newSelection.Add(child);
-                    }
-                });
-
-                foreach (var selectable in newSelection)
-                {
-                    if (selection.Contains(selectable))
-                    {
-                        if (e.actionKey) // invert selection on shift only
-                            graphView.RemoveFromSelection(selectable);
-                    }
-                    else
-                        graphView.AddToSelection(selectable);
+                    m_NewSelection.Add(child);
                 }
+            });
+
+            foreach (var selectable in m_NewSelection)
+            {
+                if (selection.Contains(selectable))
+                {
+                    if (e.actionKey) // invert selection on shift only
+                        graphView.RemoveFromSelection(selectable);
+                }
+                else
+                    graphView.AddToSelection(selectable);
             }
+            m_NewSelection.Clear();
             m_Active = false;
             target.ReleaseMouse();
             e.StopPropagation();

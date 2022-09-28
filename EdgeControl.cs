@@ -121,20 +121,6 @@ namespace GraphViewPlayer
             }
         }
 
-        [Obsolete("Use inputColor and/or outputColor")]
-        public Color edgeColor
-        {
-            get { return m_InputColor; }
-            set
-            {
-                if (m_InputColor == value && m_OutputColor == value)
-                    return;
-                m_InputColor = value;
-                m_OutputColor = value;
-                MarkDirtyRepaint();
-            }
-        }
-
         Color m_InputColor = Color.grey;
         public Color inputColor
         {
@@ -678,9 +664,7 @@ namespace GraphViewPlayer
             // the sweep going backwards.
             if (closestPortDirection == Direction.Input)
             {
-                double endAngle = corner.endAngle;
-                corner.endAngle = corner.startAngle;
-                corner.startAngle = endAngle;
+                (corner.endAngle, corner.startAngle) = (corner.startAngle, corner.endAngle);
             }
 
             // Validate the sweep angle so it turns into the correct direction.
@@ -854,8 +838,8 @@ namespace GraphViewPlayer
             Color inColor = this.inputColor;
             // Color outColor = this.outputColor;
 
-            uint cpt = (uint)m_RenderPoints.Count;
-            var painter2D = mgc.painter2D;
+            int cpt = m_RenderPoints.Count;
+            Painter2D painter2D = mgc.painter2D;
 
             float width = edgeWidth;
             // float alpha = 1.0f;

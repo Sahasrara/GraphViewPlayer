@@ -2,6 +2,7 @@
 // Copyright (c) Unity Technologies. For terms of use, see
 // https://unity3d.com/legal/licenses/Unity_Reference_Only_License
 
+using System;
 using UnityEngine;
 using UnityEngine.UIElements;
 using UnityEngine.Profiling;
@@ -12,12 +13,14 @@ namespace GraphViewPlayer
     {
         private const float k_EndPointRadius = 4.0f;
         private const float k_InterceptWidth = 6.0f;
-        private static CustomStyleProperty<int> s_EdgeWidthProperty = new CustomStyleProperty<int>("--edge-width");
-        private static CustomStyleProperty<Color> s_SelectedEdgeColorProperty = new CustomStyleProperty<Color>("--selected-edge-color");
-        private static CustomStyleProperty<Color> s_GhostEdgeColorProperty = new CustomStyleProperty<Color>("--ghost-edge-color");
-        private static CustomStyleProperty<Color> s_EdgeColorProperty = new CustomStyleProperty<Color>("--edge-color");
+        private static CustomStyleProperty<int> s_EdgeWidthProperty = new("--edge-width");
+        private static CustomStyleProperty<int> s_EdgeWidthSelectedProperty = new("--edge-width-selected");
+        private static CustomStyleProperty<Color> s_EdgeColorSelectedProperty = new("--edge-color-selected");
+        private static CustomStyleProperty<Color> s_EdgeColorGhostProperty = new("--edge-color-ghost");
+        private static CustomStyleProperty<Color> s_EdgeColorProperty = new("--edge-color");
 
         private static readonly int s_DefaultEdgeWidth = 2;
+        private static readonly int s_DefaultEdgeWidthSelected = 2;
         private static readonly Color s_DefaultSelectedColor = new Color(240 / 255f, 240 / 255f, 240 / 255f);
         private static readonly Color s_DefaultColor = new Color(146 / 255f, 146 / 255f, 146 / 255f);
         private static readonly Color s_DefaultGhostColor = new Color(85 / 255f, 85 / 255f, 85 / 255f);
@@ -34,57 +37,46 @@ namespace GraphViewPlayer
 
         public Port output
         {
-            get { return m_OutputPort; }
-            set
-            {
-                if (m_OutputPort != null && value != m_OutputPort)
-                {
-                    m_OutputPort.UpdateCapColor();
-                    UntrackGraphElement(m_OutputPort);
-                }
-
-                if (value != m_OutputPort)
-                {
-                    m_OutputPort = value;
-                    if (m_OutputPort != null)
-                    {
-                        TrackGraphElement(m_OutputPort);
-                    }
-                }
-
-                edgeControl.drawFromCap = m_OutputPort == null;
-                m_EndPointsDirty = true;
-                OnPortChanged(false);
-            }
+            get => m_OutputPort;
+            set => SetPort(ref m_OutputPort, value, SetDrawCapFrom);
         }
 
         public override bool showInMiniMap => false;
 
         public Port input
         {
-            get { return m_InputPort; }
-            set
-            {
-                if (m_InputPort != null && value != m_InputPort)
-                {
-                    m_InputPort.UpdateCapColor();
-                    UntrackGraphElement(m_InputPort);
-                }
-
-                if (value != m_InputPort)
-                {
-                    m_InputPort = value;
-                    if (m_InputPort != null)
-                    {
-                        TrackGraphElement(m_InputPort);
-                    }
-                }
-                edgeControl.drawToCap = m_InputPort == null;
-                m_EndPointsDirty = true;
-                OnPortChanged(true);
-            }
+            get => m_InputPort;
+            set => SetPort(ref m_InputPort, value, SetDrawCapTo);
         }
 
+        private void SetDrawCapFrom(bool shouldDraw) => edgeControl.drawFromCap = shouldDraw; 
+        private void SetDrawCapTo(bool shouldDraw) => edgeControl.drawToCap = shouldDraw; 
+        private void SetPort(ref Port portToSet, Port newPort, Action<bool> drawCapSetter)
+        {
+            if (newPort != portToSet)
+            {
+                // Clean Up Old Connection
+                if (portToSet != null)
+                {
+                    UntrackGraphElement(portToSet);
+                    portToSet.Disconnect(this);
+                }
+                    
+                // Setup New Connection
+                portToSet = newPort;
+                if (portToSet != null)
+                {
+                    TrackGraphElement(portToSet);
+                    portToSet.Connect(this);
+                    drawCapSetter(true);
+                }
+                else drawCapSetter(false);
+                    
+                // Mark Dirty
+                m_EndPointsDirty = true; 
+                OnPortChanged(false);
+            } 
+        }
 
         EdgeControl m_EdgeControl;
         public EdgeControl edgeControl
@@ -124,33 +116,19 @@ namespace GraphViewPlayer
         }
 
         int m_EdgeWidth = s_DefaultEdgeWidth;
-        public int edgeWidth
-        {
-            get { return m_EdgeWidth; }
-        }
+        public int edgeWidth => m_EdgeWidth;
+
+        int m_EdgeWidthSelected = s_DefaultEdgeWidthSelected;
+        public int edgeWidthSelected => m_EdgeWidthSelected;
 
         Color m_SelectedColor = s_DefaultSelectedColor;
-        public Color selectedColor
-        {
-            get { return m_SelectedColor; }
-        }
+        public Color selectedColor => m_SelectedColor;
 
         Color m_DefaultColor = s_DefaultColor;
-        public Color defaultColor
-        {
-            get { return m_DefaultColor; }
-        }
+        public Color defaultColor => m_DefaultColor;
 
         Color m_GhostColor = s_DefaultGhostColor;
-        public Color ghostColor
-        {
-            get { return m_GhostColor; }
-        }
-
-        protected Vector2[] PointsAndTangents
-        {
-            get { return edgeControl.controlPoints; }
-        }
+        public Color ghostColor => m_GhostColor;
 
         private bool m_EndPointsDirty;
 
@@ -168,6 +146,7 @@ namespace GraphViewPlayer
 
             RegisterCallback<AttachToPanelEvent>(OnEdgeAttach);
             RegisterCallback<GeometryChangedEvent>(OnGeometryChanged);
+            focusable = true;
         }
 
         public override bool Overlaps(Rect rectangle)
@@ -188,6 +167,12 @@ namespace GraphViewPlayer
             Profiler.EndSample();
 
             return result;
+        }
+
+        public void Disconnect()
+        {
+            output = null;
+            input = null;
         }
 
         public virtual void OnPortChanged(bool isInput)
@@ -221,53 +206,34 @@ namespace GraphViewPlayer
             return true;
         }
 
-        protected virtual void DrawEdge() {}
-
         void UpdateEdgeControlColorsAndWidth()
         {
             if (selected)
             {
                 if (isGhostEdge)
+                {
                     Debug.Log("Selected Ghost Edge: this should never be");
-
-                edgeControl.inputColor = selectedColor;
-                edgeControl.outputColor = selectedColor;
-                edgeControl.edgeWidth = edgeWidth;
-
-                if (m_InputPort != null)
-                    m_InputPort.capColor = selectedColor;
-
-                if (m_OutputPort != null)
-                    m_OutputPort.capColor = selectedColor;
+                }
+                else
+                {
+                    edgeControl.inputColor = selectedColor;
+                    edgeControl.outputColor = selectedColor;
+                    edgeControl.edgeWidth = edgeWidthSelected; 
+                }
             }
             else
             {
-                if (m_InputPort != null)
-                    m_InputPort.UpdateCapColor();
-
-                if (m_OutputPort != null)
-                    m_OutputPort.UpdateCapColor();
-
-                if (m_InputPort != null)
-                    edgeControl.inputColor = m_InputPort.portColor;
-                else if (m_OutputPort != null)
-                    edgeControl.inputColor = m_OutputPort.portColor;
-
-                if (m_OutputPort != null)
-                    edgeControl.outputColor = m_OutputPort.portColor;
-                else if (m_InputPort != null)
-                    edgeControl.outputColor = m_InputPort.portColor;
-
-                edgeControl.edgeWidth = edgeWidth;
-
-                edgeControl.toCapColor = edgeControl.inputColor;
-                edgeControl.fromCapColor = edgeControl.outputColor;
-
                 if (isGhostEdge)
                 {
-                    edgeControl.inputColor = new Color(edgeControl.inputColor.r, edgeControl.inputColor.g, edgeControl.inputColor.b, 0.5f);
-                    edgeControl.outputColor = new Color(edgeControl.outputColor.r, edgeControl.outputColor.g, edgeControl.outputColor.b, 0.5f);
+                    edgeControl.inputColor = ghostColor;
+                    edgeControl.outputColor = ghostColor;
                 }
+                else
+                {
+                    edgeControl.inputColor = defaultColor;
+                    edgeControl.outputColor = defaultColor;
+                }
+                edgeControl.edgeWidth = edgeWidth;
             }
         }
 
@@ -275,21 +241,15 @@ namespace GraphViewPlayer
         {
             base.OnCustomStyleResolved(styles);
 
-            int edgeWidthValue = 0;
-            Color selectColorValue = Color.clear;
-            Color edgeColorValue = Color.clear;
-            Color ghostColorValue = Color.clear;
-
-            if (styles.TryGetValue(s_EdgeWidthProperty, out edgeWidthValue))
+            if (styles.TryGetValue(s_EdgeWidthProperty, out var edgeWidthValue))
                 m_EdgeWidth = edgeWidthValue;
-
-            if (styles.TryGetValue(s_SelectedEdgeColorProperty, out selectColorValue))
+            if (styles.TryGetValue(s_EdgeWidthSelectedProperty, out var edgeWidthSelectedValue))
+                m_EdgeWidthSelected = edgeWidthSelectedValue;
+            if (styles.TryGetValue(s_EdgeColorSelectedProperty, out var selectColorValue))
                 m_SelectedColor = selectColorValue;
-
-            if (styles.TryGetValue(s_EdgeColorProperty, out edgeColorValue))
+            if (styles.TryGetValue(s_EdgeColorProperty, out var edgeColorValue))
                 m_DefaultColor = edgeColorValue;
-
-            if (styles.TryGetValue(s_GhostEdgeColorProperty, out ghostColorValue))
+            if (styles.TryGetValue(s_EdgeColorGhostProperty, out var ghostColorValue))
                 m_GhostColor = ghostColorValue;
 
             UpdateEdgeControlColorsAndWidth();

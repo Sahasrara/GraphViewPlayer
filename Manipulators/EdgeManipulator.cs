@@ -82,7 +82,7 @@ namespace GraphViewPlayer
 
         protected void OnMouseMove(MouseMoveEvent evt)
         {
-            /// If the left mouse button is not down then return
+            // If the left mouse button is not down then return
             if (m_Edge == null)
             {
                 return;
@@ -102,7 +102,7 @@ namespace GraphViewPlayer
                     return;
                 }
 
-                /// Determine which end is the nearest to the mouse position then detach it.
+                // Determine which end is the nearest to the mouse position then detach it.
                 Vector2 outputPos = new Vector2(m_Edge.output.GetGlobalCenter().x, m_Edge.output.GetGlobalCenter().y);
                 Vector2 inputPos = new Vector2(m_Edge.input.GetGlobalCenter().x, m_Edge.input.GetGlobalCenter().y);
 
@@ -115,27 +115,22 @@ namespace GraphViewPlayer
                 {
                     m_ConnectedPort = m_Edge.output;
                     m_DetachedPort = m_Edge.input;
-                    m_DetachedPort.Disconnect(m_Edge);
-
-                    m_Edge.input = null;
+                    // m_Edge.input = null;
                 }
                 else
                 {
                     m_ConnectedPort = m_Edge.input;
                     m_DetachedPort = m_Edge.output;
-                    m_DetachedPort.Disconnect(m_Edge);
-
-                    m_Edge.output = null;
+                    // m_Edge.output = null;
                 }
-
-                // Use the edge drag helper of the still connected port
-
-                m_ConnectedEdgeDragHelper = m_ConnectedPort.edgeConnector.edgeDragHelper;
-                m_ConnectedEdgeDragHelper.draggedPort = m_ConnectedPort;
-                m_ConnectedEdgeDragHelper.edgeCandidate = m_Edge;
 
                 m_AdditionalEdgeDragHelpers.Clear();
                 m_AdditionalEdges.Clear();
+
+                // Use the edge drag helper of the still connected port
+                m_ConnectedEdgeDragHelper = m_ConnectedPort.edgeConnector.edgeDragHelper;
+                m_ConnectedEdgeDragHelper.draggedPort = m_ConnectedPort;
+                m_ConnectedEdgeDragHelper.edgeCandidate = m_Edge;
 
                 GraphView gv = m_DetachedPort.GetFirstAncestorOfType<GraphView>();
 
@@ -145,29 +140,19 @@ namespace GraphViewPlayer
                     {
                         if (edge != m_Edge && edge.IsSelected(gv))
                         {
-                            var otherPort = m_DetachedPort == edge.input ? edge.output : edge.input;
-
-                            var edgeDragHelper = otherPort.edgeConnector.edgeDragHelper;
-                            edgeDragHelper.draggedPort = otherPort;
+                            var connectedPort = m_DetachedFromInputPort ? edge.output : edge.input;
+                            var edgeDragHelper = connectedPort.edgeConnector.edgeDragHelper;
+                            edgeDragHelper.draggedPort = connectedPort;
                             edgeDragHelper.edgeCandidate = edge;
-                            if (m_DetachedPort == edge.input)
-                                edge.input = null;
-                            else
-                                edge.output = null;
-
                             m_AdditionalEdgeDragHelpers.Add(edgeDragHelper);
                             m_AdditionalEdges.Add(edge);
                         }
                     }
-
-                    foreach (var edge in m_AdditionalEdges)
-                        m_DetachedPort.Disconnect(edge);
                 }
 
                 m_Edge.candidatePosition = evt.mousePosition;
 
                 // Redirect the last mouse down event to active the drag helper
-
                 if (m_ConnectedEdgeDragHelper.HandleMouseDown(m_LastMouseDownEvent))
                 {
                     m_Active = true;
@@ -197,6 +182,7 @@ namespace GraphViewPlayer
 
         protected void OnMouseUp(MouseUpEvent evt)
         {
+            DitchFocus();
             if (CanStopManipulation(evt))
             {
                 target.ReleaseMouse();
@@ -204,7 +190,7 @@ namespace GraphViewPlayer
                 {
                     // Restore the detached port before potentially delete or reconnect it.
                     // This is to ensure that the edge has valid input and output so it can be properly handled by the model.
-                    RestoreDetachedPort();
+                    // RestoreDetachedPort();
 
                     m_ConnectedEdgeDragHelper.HandleMouseUp(evt);
 
@@ -218,22 +204,24 @@ namespace GraphViewPlayer
             }
         }
 
-        protected void OnKeyDown(KeyDownEvent evt)
+        protected void OnKeyDown(KeyDownEvent e)
         {
-            if (m_Active)
-            {
-                if (evt.keyCode == KeyCode.Escape)
-                {
-                    Debug.Log("YAY");
-                    StopDragging();
-                    evt.StopPropagation();
-                }
-            }
+            if (!m_Active || e.keyCode != KeyCode.Escape)
+                return;
+
+            DitchFocus();
+            StopDragging();
+            e.StopPropagation();
+        }
+
+        private void DitchFocus()
+        {
+            if (target is Edge edge) edge.GetFirstAncestorOfType<GraphView>().Focus();
         }
 
         void StopDragging()
         {
-            RestoreDetachedPort();
+            // RestoreDetachedPort();
 
             m_ConnectedEdgeDragHelper.Reset();
 
@@ -251,27 +239,17 @@ namespace GraphViewPlayer
             if (m_DetachedFromInputPort)
             {
                 m_Edge.input = m_DetachedPort;
-
-                m_DetachedPort.Connect(m_Edge);
-
                 foreach (var edge in m_AdditionalEdges)
                 {
                     edge.input = m_DetachedPort;
-
-                    m_DetachedPort.Connect(edge);
                 }
             }
             else
             {
                 m_Edge.output = m_DetachedPort;
-
-                m_DetachedPort.Connect(m_Edge);
-
                 foreach (var edge in m_AdditionalEdges)
                 {
                     edge.output = m_DetachedPort;
-
-                    m_DetachedPort.Connect(edge);
                 }
             }
         }

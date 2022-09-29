@@ -11,13 +11,13 @@ namespace GraphViewPlayer
 {
     public class Port : VisualElement 
     {
-        private static CustomStyleProperty<Color> s_PortColorProperty = new CustomStyleProperty<Color>("--port-color");
-        private static CustomStyleProperty<Color> s_DisabledPortColorProperty = new CustomStyleProperty<Color>("--disabled-port-color");
+        private static CustomStyleProperty<Color> s_PortColorProperty = new("--port-color");
+        private static CustomStyleProperty<Color> s_DisabledPortColorProperty = new("--disabled-port-color");
 
         private static readonly Color s_DefaultColor = new Color(240 / 255f, 240 / 255f, 240 / 255f);
         private static readonly Color s_DefaultDisabledColor = new Color(70 / 255f, 70 / 255f, 70 / 255f);
 
-        protected EdgeConnector m_EdgeConnector;
+        protected PortManipulator m_PortManipulator;
         protected VisualElement m_ConnectorBox;
         protected Label m_ConnectorText;
         protected VisualElement m_ConnectorBoxCap;
@@ -46,22 +46,6 @@ namespace GraphViewPlayer
             set { m_ConnectorText.text = value; }
         }
 
-        // private bool m_portCapLit;
-        // public bool portCapLit
-        // {
-        //     get
-        //     {
-        //         return m_portCapLit;
-        //     }
-        //     set
-        //     {
-        //         if (value == m_portCapLit)
-        //             return;
-        //         m_portCapLit = value;
-        //         UpdateCapColor();
-        //     }
-        // }
-
         public Direction direction
         {
             get { return m_Direction; }
@@ -81,14 +65,14 @@ namespace GraphViewPlayer
         public enum Capacity
         {
             Single,
-            Multi
+            Multi,
         }
 
         public Capacity capacity { get; private set; }
 
-        public EdgeConnector edgeConnector
+        public PortManipulator portManipulator
         {
-            get { return m_EdgeConnector; }
+            get { return m_PortManipulator; }
         }
 
         private bool m_Highlight = true;
@@ -133,7 +117,12 @@ namespace GraphViewPlayer
         {
             get
             {
-                return m_Connections.Count > 0;
+                foreach (Edge edge in m_Connections)
+                {
+                    if (edge.IsCandidateEdge()) continue;
+                    return true;
+                }
+                return false;
             }
         }
 
@@ -212,6 +201,7 @@ namespace GraphViewPlayer
         {
             foreach (Edge e in m_Connections)
             {
+                if (e.IsCandidateEdge()) continue;
                 if (direction == Direction.Output)
                 {
                     if (e.input == other)  return true;
@@ -229,9 +219,9 @@ namespace GraphViewPlayer
         {
             var port = new Port(orientation, direction, capacity)
             {
-                m_EdgeConnector = new EdgeConnector<TEdge>(),
+                m_PortManipulator = new PortManipulator<TEdge>(),
             };
-            port.AddManipulator(port.m_EdgeConnector);
+            port.AddManipulator(port.m_PortManipulator);
             return port;
         }
 
@@ -302,7 +292,6 @@ namespace GraphViewPlayer
 
         internal void UpdateCapColor()
         {
-            // if (portCapLit || connected)
             if (connected)
             {
                 m_ConnectorBoxCap.style.backgroundColor = portColor;

@@ -519,9 +519,9 @@ namespace GraphViewPlayer
             foreach (Port endPort in ports)
             {
                 if (startPort.direction != endPort.direction // Input to output only 
-                    && startPort.node != endPort.node // Not the same port
+                    && startPort.node != endPort.node // Can't connect to self 
+                    && endPort.CanConnectToMore() // Has capacity 
                     && !startPort.IsConnectedTo(endPort) // Not already connected
-                    && endPort.CanConnectToMore() // Not Capacity single and already connected
                 )
                 {
                     toPopulate.Add(endPort);

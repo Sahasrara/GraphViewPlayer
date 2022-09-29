@@ -91,7 +91,6 @@ namespace GraphViewPlayer
             target.RegisterCallback<MouseDownEvent>(OnMouseDown);
             target.RegisterCallback<MouseMoveEvent>(OnMouseMove);
             target.RegisterCallback<MouseUpEvent>(OnMouseUp);
-
             target.RegisterCallback<KeyDownEvent>(OnKeyDown);
             target.RegisterCallback<MouseCaptureOutEvent>(OnMouseCaptureOutEvent);
             m_Dragging = false;
@@ -102,7 +101,6 @@ namespace GraphViewPlayer
             target.UnregisterCallback<MouseDownEvent>(OnMouseDown);
             target.UnregisterCallback<MouseMoveEvent>(OnMouseMove);
             target.UnregisterCallback<MouseUpEvent>(OnMouseUp);
-
             target.UnregisterCallback<KeyDownEvent>(OnKeyDown);
             target.UnregisterCallback<MouseCaptureOutEvent>(OnMouseCaptureOutEvent);
         }
@@ -242,10 +240,13 @@ namespace GraphViewPlayer
 
                 m_originalMouse = e.mousePosition;
                 m_ItemPanDiff = Vector3.zero;
-
+                m_PanStart = m_GraphView.viewTransform.position;
                 if (m_PanSchedule == null)
                 {
-                    m_PanSchedule = m_GraphView.schedule.Execute(Pan).Every(k_PanInterval).StartingIn(k_PanInterval);
+                    m_PanSchedule = m_GraphView.schedule
+                        .Execute(Pan)
+                        .Every(PanUtils.k_PanInterval)
+                        .StartingIn(PanUtils.k_PanInterval);
                     m_PanSchedule.Pause();
                 }
 /*TODO
@@ -260,37 +261,13 @@ namespace GraphViewPlayer
             }
         }
 
-        internal const int k_PanAreaWidth = 100;
-        internal const int k_PanSpeed = 4;
-        internal const int k_PanInterval = 10;
-        internal const float k_MinSpeedFactor = 0.5f;
-        internal const float k_MaxSpeedFactor = 2.5f;
-        internal const float k_MaxPanSpeed = k_MaxSpeedFactor * k_PanSpeed;
-
         private IVisualElementScheduledItem m_PanSchedule;
         private Vector3 m_PanDiff = Vector3.zero;
         private Vector3 m_ItemPanDiff = Vector3.zero;
+        private Vector3 m_PanStart = Vector3.zero;
         private Vector2 m_MouseDiff = Vector2.zero;
         float m_XScale;
 
-        internal Vector2 GetEffectivePanSpeed(Vector2 mousePos)
-        {
-            Vector2 effectiveSpeed = Vector2.zero;
-
-            if (mousePos.x <= k_PanAreaWidth)
-                effectiveSpeed.x = -(((k_PanAreaWidth - mousePos.x) / k_PanAreaWidth) + 0.5f) * k_PanSpeed;
-            else if (mousePos.x >= m_GraphView.contentContainer.layout.width - k_PanAreaWidth)
-                effectiveSpeed.x = (((mousePos.x - (m_GraphView.contentContainer.layout.width - k_PanAreaWidth)) / k_PanAreaWidth) + 0.5f) * k_PanSpeed;
-
-            if (mousePos.y <= k_PanAreaWidth)
-                effectiveSpeed.y = -(((k_PanAreaWidth - mousePos.y) / k_PanAreaWidth) + 0.5f) * k_PanSpeed;
-            else if (mousePos.y >= m_GraphView.contentContainer.layout.height - k_PanAreaWidth)
-                effectiveSpeed.y = (((mousePos.y - (m_GraphView.contentContainer.layout.height - k_PanAreaWidth)) / k_PanAreaWidth) + 0.5f) * k_PanSpeed;
-
-            effectiveSpeed = Vector2.ClampMagnitude(effectiveSpeed, k_MaxPanSpeed);
-
-            return effectiveSpeed;
-        }
 /* TODO
         void ComputeSnappedRect(ref Rect selectedElementProposedGeom, float scale)
         {
@@ -314,8 +291,7 @@ namespace GraphViewPlayer
 
             var ve = (VisualElement)e.target;
             Vector2 gvMousePos = ve.ChangeCoordinatesTo(m_GraphView.contentContainer, e.localMousePosition);
-            m_PanDiff = GetEffectivePanSpeed(gvMousePos);
-
+            m_PanDiff = PanUtils.GetEffectivePanSpeed(m_GraphView, gvMousePos);
 
             if (m_PanDiff != Vector3.zero)
             {
@@ -543,13 +519,11 @@ namespace GraphViewPlayer
                 v.Key.SetPosition(v.Value.pos);
             }
 
+            // Reset from pan
             m_PanSchedule.Pause();
-
             if (m_ItemPanDiff != Vector3.zero)
             {
-                Vector3 p = m_GraphView.contentViewContainer.transform.position;
-                Vector3 s = m_GraphView.contentViewContainer.transform.scale;
-                m_GraphView.UpdateViewTransform(p, s);
+                m_GraphView.UpdateViewTransform(m_PanStart);
             }
 
             using (PlayerDragExitedEvent dexit = PlayerDragExitedEvent.GetPooled())

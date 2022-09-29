@@ -7,20 +7,19 @@ using UnityEngine.UIElements;
 
 namespace GraphViewPlayer
 {
-    public abstract class EdgeConnector : MouseManipulator
+    public abstract class PortManipulator : MouseManipulator
     {
         public abstract EdgeDragHelper edgeDragHelper { get; }
     }
 
-    public class EdgeConnector<TEdge> : EdgeConnector where TEdge : Edge, new()
+    public class PortManipulator<TEdge> : PortManipulator where TEdge : Edge, new()
     {
-        readonly EdgeDragHelper m_EdgeDragHelper;
+        private const float k_ConnectionDistanceTreshold = 10f;
+        private readonly EdgeDragHelper m_EdgeDragHelper;
         private bool m_Active;
-        Vector2 m_MouseDownPosition;
+        private Vector2 m_MouseDownPosition;
 
-        internal const float k_ConnectionDistanceTreshold = 10f;
-
-        public EdgeConnector()
+        public PortManipulator()
         {
             m_EdgeDragHelper = new EdgeDragHelper<TEdge>();
             m_Active = false;
@@ -35,7 +34,6 @@ namespace GraphViewPlayer
             target.RegisterCallback<MouseMoveEvent>(OnMouseMove);
             target.RegisterCallback<MouseUpEvent>(OnMouseUp);
             target.RegisterCallback<KeyDownEvent>(OnKeyDown);
-            target.RegisterCallback<MouseCaptureOutEvent>(OnCaptureOut);
         }
 
         protected override void UnregisterCallbacksFromTarget()
@@ -44,7 +42,6 @@ namespace GraphViewPlayer
             target.UnregisterCallback<MouseMoveEvent>(OnMouseMove);
             target.UnregisterCallback<MouseUpEvent>(OnMouseUp);
             target.UnregisterCallback<KeyDownEvent>(OnKeyDown);
-            target.UnregisterCallback<MouseCaptureOutEvent>(OnCaptureOut);
         }
 
         protected virtual void OnMouseDown(MouseDownEvent e)
@@ -61,39 +58,24 @@ namespace GraphViewPlayer
             }
 
             Port draggedPort = target as Port;
-            if (draggedPort == null || !draggedPort.CanConnectToMore())
-            {
-                return;
-            }
+            if (draggedPort == null || !draggedPort.CanConnectToMore()) return;
 
+            GraphView graphView = draggedPort.GetFirstAncestorOfType<GraphView>();
             m_MouseDownPosition = e.localMousePosition;
-            m_EdgeDragHelper.draggedPort = draggedPort;
-            m_EdgeDragHelper.edgeCandidate = new TEdge();
 
-            if (m_EdgeDragHelper.HandleMouseDown(e))
-            {
-                m_Active = true;
-                target.CaptureMouse();
-
-                e.StopPropagation();
-            }
-            else
-            {
-                m_EdgeDragHelper.Reset();
-            }
-        }
-
-        void OnCaptureOut(MouseCaptureOutEvent e)
-        {
-            m_Active = false;
-            Abort();
+            TEdge candidateEdge = new TEdge(); 
+            candidateEdge.SetPortByDirection(draggedPort);
+            m_EdgeDragHelper.HandleDragStart(e, graphView, draggedPort, candidateEdge);
+            m_Active = true;
+            target.CaptureMouse();
+            e.StopPropagation();
         }
 
         protected virtual void OnMouseMove(MouseMoveEvent e)
         {
             if (!m_Active) return;
 
-            m_EdgeDragHelper.HandleMouseMove(e);
+            m_EdgeDragHelper.HandleDragContinue(e);
             e.StopPropagation();
         }
 
@@ -104,9 +86,9 @@ namespace GraphViewPlayer
                 return;
 
             if (CanPerformConnection(e.localMousePosition))
-                m_EdgeDragHelper.HandleMouseUp(e);
+                m_EdgeDragHelper.HandleDragEnd(e);
             else
-                Abort();
+                m_EdgeDragHelper.HandleDragCancel();
 
             m_Active = false;
             target.ReleaseMouse();
@@ -119,16 +101,11 @@ namespace GraphViewPlayer
                 return;
 
             DitchFocus();
-            Abort();
+            m_EdgeDragHelper.HandleDragCancel();
 
             m_Active = false;
             target.ReleaseMouse();
             e.StopPropagation();
-        }
-
-        void Abort()
-        {
-            m_EdgeDragHelper.Reset();
         }
 
         bool CanPerformConnection(Vector2 mousePosition)

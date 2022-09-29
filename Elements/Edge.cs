@@ -13,6 +13,7 @@ namespace GraphViewPlayer
     {
         private const float k_EndPointRadius = 4.0f;
         private const float k_InterceptWidth = 6.0f;
+
         private static CustomStyleProperty<int> s_EdgeWidthProperty = new("--edge-width");
         private static CustomStyleProperty<int> s_EdgeWidthSelectedProperty = new("--edge-width-selected");
         private static CustomStyleProperty<Color> s_EdgeColorSelectedProperty = new("--edge-color-selected");
@@ -21,17 +22,13 @@ namespace GraphViewPlayer
 
         private static readonly int s_DefaultEdgeWidth = 2;
         private static readonly int s_DefaultEdgeWidthSelected = 2;
-        private static readonly Color s_DefaultSelectedColor = new Color(240 / 255f, 240 / 255f, 240 / 255f);
-        private static readonly Color s_DefaultColor = new Color(146 / 255f, 146 / 255f, 146 / 255f);
-        private static readonly Color s_DefaultGhostColor = new Color(85 / 255f, 85 / 255f, 85 / 255f);
-
-        private GraphView m_GraphView;
+        private static readonly Color s_DefaultSelectedColor = new(240 / 255f, 240 / 255f, 240 / 255f);
+        private static readonly Color s_DefaultColor = new(146 / 255f, 146 / 255f, 146 / 255f);
+        private static readonly Color s_DefaultGhostColor = new(85 / 255f, 85 / 255f, 85 / 255f);
 
         private Port m_OutputPort;
         private Port m_InputPort;
-
-        private Vector2 m_CandidatePosition;
-        private Vector2 m_GlobalCandidatePosition;
+        private GraphView m_GraphView;
 
         public bool isGhostEdge { get; set; }
 
@@ -91,29 +88,41 @@ namespace GraphViewPlayer
             }
         }
 
-        public Vector2 candidatePosition
+        public bool InputPositionOverridden => m_InputPositionOverridden;
+        private bool m_InputPositionOverridden;
+        private bool m_OutputPositionOverridden;
+        private Vector2 m_InputPositionOverride;
+        private Vector2 m_OutputPositionOverride;
+
+        public void SetInputPositionOverride(Vector2 position) 
+            => SetPositionOverride(
+                position, ref m_InputPositionOverride, ref m_InputPositionOverridden, ref m_InputPort);
+
+        public void SetOutputPositionOverride(Vector2 position) 
+            => SetPositionOverride(
+                position, ref m_OutputPositionOverride, ref m_OutputPositionOverridden, ref m_OutputPort);
+
+        public void SetPositionOverride(Vector2 position, ref Vector2 overrideValueToSet, 
+            ref bool overrideFlagToSet, ref Port portToUpdate)
         {
-            get { return m_CandidatePosition; }
-            set
-            {
-                if (!Approximately(m_CandidatePosition, value))
-                {
-                    m_CandidatePosition = value;
-
-                    m_GlobalCandidatePosition = this.WorldToLocal(m_CandidatePosition);
-
-                    if (m_InputPort == null)
-                    {
-                        edgeControl.to = m_GlobalCandidatePosition;
-                    }
-                    if (m_OutputPort == null)
-                    {
-                        edgeControl.from = m_GlobalCandidatePosition;
-                    }
-                    UpdateEdgeControl();
-                }
-            }
+            if (overrideFlagToSet || overrideValueToSet != position) m_EndPointsDirty = true;
+            overrideFlagToSet = true;
+            overrideValueToSet = position;
+            UpdateEdgeControl();
+            portToUpdate?.UpdateCapColor();
         }
+
+        public void UnsetPositionOverrides()
+        {
+            if (m_InputPositionOverridden || m_OutputPositionOverridden) m_EndPointsDirty = true;
+            m_InputPositionOverridden = false; 
+            m_OutputPositionOverridden = false;
+            UpdateEdgeControl();
+            m_InputPort?.UpdateCapColor();
+            m_OutputPort?.UpdateCapColor();
+        }
+
+        public bool IsCandidateEdge() => m_InputPositionOverridden || m_OutputPositionOverridden;
 
         int m_EdgeWidth = s_DefaultEdgeWidth;
         public int edgeWidth => m_EdgeWidth;
@@ -169,6 +178,12 @@ namespace GraphViewPlayer
             return result;
         }
 
+        public void SetPortByDirection(Port port)
+        {
+            if (port.direction == Direction.Input) input = port;
+            else output = port;
+        }
+
         public void Disconnect()
         {
             output = null;
@@ -190,7 +205,7 @@ namespace GraphViewPlayer
 
         public virtual bool UpdateEdgeControl()
         {
-            if (m_OutputPort == null && m_InputPort == null)
+            if (m_OutputPort == null && m_InputPort == null && m_InputPositionOverridden && m_OutputPositionOverridden) 
                 return false;
 
             if (m_GraphView == null)
@@ -386,25 +401,19 @@ namespace GraphViewPlayer
 
         private void UpdateEdgeControlEndPoints()
         {
-            if (!m_EndPointsDirty)
-            {
-                return;
-            }
+            if (!m_EndPointsDirty) return;
             Profiler.BeginSample("Edge.UpdateEdgeControlEndPoints");
 
-            m_GlobalCandidatePosition = this.WorldToLocal(m_CandidatePosition);
-            if (m_OutputPort != null || m_InputPort != null)
-            {
-                edgeControl.to = (m_InputPort != null) ? GetPortPosition(m_InputPort) : m_GlobalCandidatePosition;
-                edgeControl.from = (m_OutputPort != null) ? GetPortPosition(m_OutputPort) : m_GlobalCandidatePosition;
-            }
+            // Input Location 
+            if (m_InputPositionOverridden) edgeControl.to = this.WorldToLocal(m_InputPositionOverride);
+            else if (m_InputPort != null) edgeControl.to = GetPortPosition(m_InputPort);
+            
+            // Output Location
+            if (m_OutputPositionOverridden)  edgeControl.from = this.WorldToLocal(m_OutputPositionOverride);
+            else if (m_OutputPort != null) edgeControl.from = GetPortPosition(m_OutputPort);
+            
             m_EndPointsDirty = false;
             Profiler.EndSample();
-        }
-
-        static bool Approximately(Vector2 v1, Vector2 v2)
-        {
-            return Mathf.Approximately(v1.x, v2.x) && Mathf.Approximately(v1.y, v2.y);
         }
     }
 }

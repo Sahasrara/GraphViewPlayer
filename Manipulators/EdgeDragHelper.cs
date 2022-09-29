@@ -4,7 +4,6 @@
 
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using UnityEngine;
 using UnityEngine.UIElements;
 
@@ -12,30 +11,24 @@ namespace GraphViewPlayer
 {
     public abstract class EdgeDragHelper
     {
-        public abstract Edge edgeCandidate { get; set; }
-        public abstract Port draggedPort { get; set; }
-        public abstract bool HandleMouseDown(MouseDownEvent evt);
-        public abstract void HandleMouseMove(MouseMoveEvent evt);
-        public abstract void HandleMouseUp(MouseUpEvent evt);
-        public abstract void Reset(bool didConnect = false);
-
-        internal const int k_PanAreaWidth = 100;
-        internal const int k_PanSpeed = 4;
-        internal const int k_PanInterval = 10;
-        internal const float k_MinSpeedFactor = 0.5f;
-        internal const float k_MaxSpeedFactor = 2.5f;
-        internal const float k_MaxPanSpeed = k_MaxSpeedFactor * k_PanSpeed;
+        public abstract void HandleDragStart(MouseDownEvent evt, GraphView graphView, Port port, Edge edge);
+        public abstract void HandleDragContinue(MouseMoveEvent evt);
+        public abstract void HandleDragEnd(MouseUpEvent evt);
+        public abstract void HandleDragCancel();
     }
 
     public class EdgeDragHelper<TEdge> : EdgeDragHelper where TEdge : Edge, new()
     {
-        protected List<Port> m_CompatiblePorts;
-        private Edge m_GhostEdge;
-        protected GraphView m_GraphView;
-
-        private IVisualElementScheduledItem m_PanSchedule;
-        private Vector3 m_PanDiff = Vector3.zero;
         private bool m_WasPanned;
+        private Vector3 m_PanDiff = Vector3.zero;
+        private Vector3 m_PanStart = Vector3.zero;
+        private IVisualElementScheduledItem m_PanSchedule;
+        
+        protected List<Port> m_CompatiblePorts;
+        protected Edge m_GhostEdge;
+        protected GraphView m_GraphView;
+        protected Edge m_EdgeCandidate;
+        protected Port m_DraggedPort;
 
         public bool resetPositionOnPan { get; set; }
 
@@ -43,160 +36,57 @@ namespace GraphViewPlayer
         {
             resetPositionOnPan = true;
             m_CompatiblePorts = new();
-            Reset();
         }
 
-        public override Edge edgeCandidate { get; set; }
-
-        public override Port draggedPort { get; set; }
-
-        public override void Reset(bool didConnect = false)
+        public override void HandleDragStart(MouseDownEvent evt, GraphView graphView, Port port, Edge edge)
         {
-            if (m_CompatiblePorts.Count() > 0)
-            {
-                // Reset the highlights.
-                m_GraphView.ports.ForEach((p) => {
-                    p.OnStopEdgeDragging();
-                });
+            // Update dragged port, edge candidate, and graph view
+            m_DraggedPort = port;
+            m_EdgeCandidate = edge;
+            m_GraphView = graphView;
 
-                // Clear Compatible Ports
-                m_CompatiblePorts.Clear();
-            }
-
-            // Clean up ghost edge.
-            CleanGhostEdge();
-
-            if (m_WasPanned)
-            {
-                if (!resetPositionOnPan || didConnect)
-                {
-                    m_GraphView.UpdateViewTransform(
-                        m_GraphView.viewTransform.position, m_GraphView.viewTransform.scale);
-                }
-            }
-
-            if (m_PanSchedule != null)
-                m_PanSchedule.Pause();
-
-            if (draggedPort != null && !didConnect)
-            {
-                draggedPort = null;
-            }
-
-            if (edgeCandidate != null)
-            {
-                m_GraphView.RemoveElement(edgeCandidate);
-                edgeCandidate.input = null;
-                edgeCandidate.output = null;
-                edgeCandidate = null;
-            }
-
-            m_GraphView = null;
-        }
-
-        public override bool HandleMouseDown(MouseDownEvent evt)
-        {
-            Vector2 mousePosition = evt.mousePosition;
-
-            if ((draggedPort == null) || (edgeCandidate == null))
-            {
-                return false;
-            }
-
-            m_GraphView = draggedPort.GetFirstAncestorOfType<GraphView>();
-
-            if (m_GraphView == null)
-            {
-                return false;
-            }
-
-            if (edgeCandidate.parent == null)
-            {
-                m_GraphView.AddElement(edgeCandidate);
-            }
-
-            bool startFromOutput = (draggedPort.direction == Direction.Output);
-
-            edgeCandidate.candidatePosition = mousePosition;
-
-            if (startFromOutput)
-            {
-                edgeCandidate.output = draggedPort;
-                edgeCandidate.input = null;
-            }
-            else
-            {
-                edgeCandidate.output = null;
-                edgeCandidate.input = draggedPort;
-            }
-
-            m_GraphView.GetCompatiblePorts(m_CompatiblePorts, draggedPort);
-
+            // Update edge drawing
+            if (m_DraggedPort.direction == Direction.Output) m_EdgeCandidate.SetInputPositionOverride(evt.mousePosition);
+            else m_EdgeCandidate.SetOutputPositionOverride(evt.mousePosition);
+            
             // Only light compatible anchors when dragging an edge.
-            m_GraphView.ports.ForEach((p) =>  {
-                p.OnStartEdgeDragging();
-            });
+            m_GraphView.GetCompatiblePorts(m_CompatiblePorts, m_DraggedPort);
+            m_GraphView.ports.ForEach(StartDraggingPort); // Don't Highlight
+            m_CompatiblePorts.ForEach(StopDraggingPort); // Highlight
 
-            foreach (Port compatiblePort in m_CompatiblePorts)
-            {
-                compatiblePort.highlight = true;
-            }
-
-            edgeCandidate.UpdateEdgeControl();
-
+            // Setup for panning
+            m_PanStart = m_GraphView.viewTransform.position; 
             if (m_PanSchedule == null)
             {
-                m_PanSchedule = m_GraphView.schedule.Execute(Pan).Every(k_PanInterval).StartingIn(k_PanInterval);
+                m_PanSchedule = m_GraphView.schedule
+                    .Execute(Pan)
+                    .Every(PanUtils.k_PanInterval)
+                    .StartingIn(PanUtils.k_PanInterval);
                 m_PanSchedule.Pause();
             }
             m_WasPanned = false;
 
-            edgeCandidate.layer = Int32.MaxValue;
-
-            return true;
+            // Set edge candidate layer and add to graph 
+            m_EdgeCandidate.layer = Int32.MaxValue;
+            m_GraphView.AddElement(m_EdgeCandidate);
         }
 
-        internal Vector2 GetEffectivePanSpeed(Vector2 mousePos)
+        public override void HandleDragContinue(MouseMoveEvent evt)
         {
-            Vector2 effectiveSpeed = Vector2.zero;
-
-            if (mousePos.x <= k_PanAreaWidth)
-                effectiveSpeed.x = -(((k_PanAreaWidth - mousePos.x) / k_PanAreaWidth) + 0.5f) * k_PanSpeed;
-            else if (mousePos.x >= m_GraphView.contentContainer.layout.width - k_PanAreaWidth)
-                effectiveSpeed.x = (((mousePos.x - (m_GraphView.contentContainer.layout.width - k_PanAreaWidth)) / k_PanAreaWidth) + 0.5f) * k_PanSpeed;
-
-            if (mousePos.y <= k_PanAreaWidth)
-                effectiveSpeed.y = -(((k_PanAreaWidth - mousePos.y) / k_PanAreaWidth) + 0.5f) * k_PanSpeed;
-            else if (mousePos.y >= m_GraphView.contentContainer.layout.height - k_PanAreaWidth)
-                effectiveSpeed.y = (((mousePos.y - (m_GraphView.contentContainer.layout.height - k_PanAreaWidth)) / k_PanAreaWidth) + 0.5f) * k_PanSpeed;
-
-            effectiveSpeed = Vector2.ClampMagnitude(effectiveSpeed, k_MaxPanSpeed);
-
-            return effectiveSpeed;
-        }
-
-        public override void HandleMouseMove(MouseMoveEvent evt)
-        {
-            var ve = (VisualElement)evt.target;
+            // Panning
+            VisualElement ve = (VisualElement)evt.target;
             Vector2 gvMousePos = ve.ChangeCoordinatesTo(m_GraphView.contentContainer, evt.localMousePosition);
-            m_PanDiff = GetEffectivePanSpeed(gvMousePos);
+            m_PanDiff = PanUtils.GetEffectivePanSpeed(m_GraphView, gvMousePos);
+            if (m_PanDiff != Vector3.zero) m_PanSchedule.Resume();
+            else m_PanSchedule.Pause();
 
-            if (m_PanDiff != Vector3.zero)
-            {
-                m_PanSchedule.Resume();
-            }
-            else
-            {
-                m_PanSchedule.Pause();
-            }
-
+            // Update edge drawing
             Vector2 mousePosition = evt.mousePosition;
-
-            edgeCandidate.candidatePosition = mousePosition;
+            if (m_DraggedPort.direction == Direction.Output) m_EdgeCandidate.SetInputPositionOverride(mousePosition);
+            else m_EdgeCandidate.SetOutputPositionOverride(mousePosition);
 
             // Draw ghost edge if possible port exists.
             Port endPort = GetEndPort(mousePosition);
-
             if (endPort != null)
             {
                 if (m_GhostEdge == null)
@@ -207,92 +97,116 @@ namespace GraphViewPlayer
                     m_GraphView.AddElement(m_GhostEdge);
                 }
 
-                if (edgeCandidate.output == null)
+                if (m_EdgeCandidate.InputPositionOverridden)
                 {
-                    m_GhostEdge.input = edgeCandidate.input;
-                    m_GhostEdge.output = endPort;
+                    m_GhostEdge.input = endPort;
+                    m_GhostEdge.output = m_EdgeCandidate.output;
                 }
                 else
                 {
-                    m_GhostEdge.input = endPort;
-                    m_GhostEdge.output = edgeCandidate.output;
+                    m_GhostEdge.input = m_EdgeCandidate.input;
+                    m_GhostEdge.output = endPort;
                 }
             }
             else CleanGhostEdge();
         }
 
-        private void Pan(TimerState ts)
+        public override void HandleDragEnd(MouseUpEvent evt)
         {
-            m_GraphView.viewTransform.position -= m_PanDiff;
-            edgeCandidate.ForceUpdateEdgeControl();
-            m_WasPanned = true;
-        }
+            // Did mouse release on port?
+            Port endPort = GetEndPort(evt.mousePosition);
 
-        public override void HandleMouseUp(MouseUpEvent evt)
-        {
-            Vector2 mousePosition = evt.mousePosition;
-
-            // Reset the highlights.
-            m_GraphView.ports.ForEach((p) => {
-                p.OnStopEdgeDragging();
-            });
-
-            // Clean up ghost edges.
-            CleanGhostEdge();
-
-            Port endPort = GetEndPort(mousePosition);
-
-            // If it is an existing valid edge then delete and notify the model (using DeleteElements()).
-            if (edgeCandidate.input != null && edgeCandidate.output != null)
-            {
-                // Save the current input and output before deleting the edge as they will be reset
-                Port oldInput = edgeCandidate.input;
-                Port oldOutput = edgeCandidate.output;
-            
-                Debug.Log("HERE");
-                // m_GraphView.OnEdgeDelete(edgeCandidate);
-                edgeCandidate.Disconnect();
-                m_GraphView.RemoveElement(edgeCandidate);
-            
-                // Restore the previous input and output
-                edgeCandidate = new TEdge();
-                edgeCandidate.input = oldInput;
-                edgeCandidate.output = oldOutput;
-            }
-            // otherwise, if it is an temporary edge then just remove it as it is not already known by the model
-            else
-            {
-                m_GraphView.RemoveElement(edgeCandidate);
-            }
-
-            bool didConnect;
             // This is a connection
+            bool edgeCandidateWasExistingEdge = m_EdgeCandidate.input != null && m_EdgeCandidate.output != null;
             if (endPort != null)
             {
+                // Find new input/output ports
+                Port inputPort;
+                Port outputPort;
                 if (endPort.direction == Direction.Output)
-                    edgeCandidate.output = endPort;
+                {
+                    inputPort = m_EdgeCandidate.input;
+                    outputPort = endPort;
+                }
                 else
-                    edgeCandidate.input = endPort;
+                {
+                    inputPort = endPort;
+                    outputPort = m_EdgeCandidate.output; 
+                }
 
-                // Notify 
-                m_GraphView.AddElement(edgeCandidate);
-                Debug.Log("NEW CONNECTION");
-                // m_GraphView.OnEdgeCreate(edgeCandidate);
-                
-                didConnect = true;
+                if (edgeCandidateWasExistingEdge)
+                {
+                    // Existing edge is being deleted and connected elsewhere so request a deletion 
+                    m_GraphView.OnEdgeDelete(m_EdgeCandidate);
+                    // TODO: delete this, should be handled by OnEdgeDelete
+                    m_EdgeCandidate.Disconnect();
+                }
+
+                // Set ports on the new edge
+                m_EdgeCandidate.input = inputPort;
+                m_EdgeCandidate.output = outputPort;
+
+                // Create new edge
+                m_GraphView.OnEdgeCreate(m_EdgeCandidate);
+                // TODO: remove what's below. OnEdgeCreate should tackle that.
+                m_GraphView.AddElement(m_EdgeCandidate);
             }
             // This is a disconnection
             else
             {
-                edgeCandidate.output = null;
-                edgeCandidate.input = null;
-                didConnect = false;
+                // This was an existing edge and so much be deleted 
+                if (edgeCandidateWasExistingEdge)
+                {
+                    m_GraphView.OnEdgeDelete(m_EdgeCandidate);
+                    // TODO
+                    m_EdgeCandidate.Disconnect();
+                }
+            }
+            HandleDragCancel();
+        }
+
+        public override void HandleDragCancel()
+        {
+            // Reset the highlights.
+            m_GraphView?.ports.ForEach(StopDraggingPort);
+
+            // Clear Compatible Ports
+            m_CompatiblePorts.Clear();
+
+            // Clean up ghost edge.
+            CleanGhostEdge();
+
+            // Reset view if we didn't connect, or we always want a reset
+            m_PanSchedule?.Pause();
+            if (m_WasPanned && resetPositionOnPan)
+            {
+                m_GraphView.UpdateViewTransform(m_PanStart, m_GraphView.viewTransform.scale);
             }
 
-            edgeCandidate.ResetLayer();
-            edgeCandidate = null;
-            m_CompatiblePorts.Clear();
-            Reset(didConnect);
+            // Clean up candidate edges
+            if (m_EdgeCandidate != null)
+            {
+                m_EdgeCandidate.UnsetPositionOverrides();
+                m_EdgeCandidate.ResetLayer();
+
+                // This was only an edge candidate, not previously used as a real edge
+                if (m_EdgeCandidate.input == null || m_EdgeCandidate.output == null)
+                {
+                    m_EdgeCandidate.Disconnect();
+                    m_GraphView.RemoveElement(m_EdgeCandidate);
+                }
+            }
+
+            m_DraggedPort = null;
+            m_EdgeCandidate = null;
+            m_GraphView = null; 
+        }
+
+        private void Pan(TimerState ts)
+        {
+            m_GraphView.UpdateViewTransform(m_GraphView.viewTransform.position - m_PanDiff);
+            m_EdgeCandidate.ForceUpdateEdgeControl();
+            m_WasPanned = true; 
         }
 
         private Port GetEndPort(Vector2 mousePosition)
@@ -346,5 +260,8 @@ namespace GraphViewPlayer
                 m_GhostEdge = null;
             }
         }
+
+        private void StartDraggingPort(Port p) => p.OnStartEdgeDragging();
+        private void StopDraggingPort(Port p) => p.OnStopEdgeDragging();
     }
 }

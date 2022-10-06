@@ -33,9 +33,18 @@ namespace GraphViewPlayer
             internal set
             {
                 if (m_GraphView == value) { return; }
-                m_GraphView = value;
-                if (value == null) { OnRemovedFromGraphView(); }
-                else { OnAddedToGraphView(); }
+
+                // We want m_GraphView there whenever these events are call so we can do setup/teardown
+                if (value == null)
+                {
+                    OnRemovedFromGraphView();
+                    m_GraphView = null;
+                }
+                else
+                {
+                    m_GraphView = value;
+                    OnAddedToGraphView();
+                }
             }
         }
 

@@ -548,9 +548,22 @@ namespace GraphViewPlayer
             graphElement.Graph = null;
         }
         #endregion
-        
+
         #region Ports
         public void ConnectPorts(Port input, Port output) { AddElement(input.ConnectTo(output)); }
+        
+        internal void IlluminateCompatiblePorts(Port port)
+        {
+            foreach (Port otherPort in Ports)
+            {
+                otherPort.Highlight = port.CanConnectTo(otherPort);
+            }
+        }
+
+        internal void IlluminateAllPorts()
+        {
+            foreach (Port otherPort in Ports) { otherPort.Highlight = true; }
+        }
         #endregion
 
         #region Framing
@@ -702,12 +715,14 @@ namespace GraphViewPlayer
             public void OnDropEnter(IDropEnterContext context) {  }
             public void OnDrop(IDropContext context)
             {
-                if (context.Draggable is BaseEdge edge)
+                if (context.GetUserData() is BaseEdge edge)
                 {
                     // Delete real edge
                     if (edge.IsRealEdge()) m_GraphView.OnEdgeDelete(edge);
                     // Delete candidate edge
                     else m_GraphView.RemoveElement(edge);
+                    // Reset port highlights
+                    m_GraphView.IlluminateAllPorts();
                 } 
             }
             public void OnDropExit(IDropExitContext context) {  }

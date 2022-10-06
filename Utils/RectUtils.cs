@@ -7,7 +7,7 @@ using UnityEngine;
 
 namespace GraphViewPlayer
 {
-    public class RectUtils
+    public static class RectUtils
     {
         public static bool IntersectsSegment(Rect rect, Vector2 p1, Vector2 p2)
         {
@@ -69,7 +69,7 @@ namespace GraphViewPlayer
 
         public static Rect Encompass(Rect a, Rect b)
         {
-            return new Rect
+            return new() 
             {
                 xMin = Math.Min(a.xMin, b.xMin),
                 yMin = Math.Min(a.yMin, b.yMin),
@@ -80,7 +80,7 @@ namespace GraphViewPlayer
 
         public static Rect Inflate(Rect a, float left, float top, float right, float bottom)
         {
-            return new Rect
+            return new() 
             {
                 xMin = a.xMin - left,
                 yMin = a.yMin - top,

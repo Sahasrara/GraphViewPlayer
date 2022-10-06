@@ -33,23 +33,23 @@ namespace GraphViewPlayer
 
         private static readonly Gradient s_Gradient = new();
         private static readonly Stack<VisualElement> s_CapPool = new();
+        private readonly List<Vector2> m_LastLocalControlPoints = new();
 
         // The points that will be rendered. Expressed in coordinates local to the element.
         private readonly List<Vector2> m_RenderPoints = new();
-        private readonly List<Vector2> m_LastLocalControlPoints = new();
+        private float m_CapRadius = 5;
+        private bool m_ControlPointsDirty = true;
 
         private int m_EdgeWidth = 2;
-        private float m_CapRadius = 5;
-        private Color m_InputColor = Color.grey;
-        private Color m_OutputColor = Color.grey;
-        private Orientation m_InputOrientation;
-        private Orientation m_OutputOrientation;
-        private VisualElement m_ToCap;
         private VisualElement m_FromCap;
-        private Color m_ToCapColor;
         private Color m_FromCapColor;
+        private Color m_InputColor = Color.grey;
+        private Orientation m_InputOrientation;
+        private Color m_OutputColor = Color.grey;
+        private Orientation m_OutputOrientation;
         private bool m_RenderPointsDirty = true;
-        private bool m_ControlPointsDirty = true;
+        private VisualElement m_ToCap;
+        private Color m_ToCapColor;
 
         public Edge()
         {
@@ -59,36 +59,18 @@ namespace GraphViewPlayer
             m_ToCap = null;
             CapRadius = k_EndPointRadius;
             InterceptWidth = k_InterceptWidth;
-            RegisterCallback<AttachToPanelEvent>(OnAttachToPanel);
-            RegisterCallback<DetachFromPanelEvent>(OnDetachFromPanel);
             generateVisualContent = OnGenerateVisualContent;
         }
-       
-        private static bool Approximately(Vector2 v1, Vector2 v2) =>
-            Mathf.Approximately(v1.x, v2.x) && Mathf.Approximately(v1.y, v2.y);
-        private static void RecycleCap(VisualElement cap) { s_CapPool.Push(cap); }
-        private static VisualElement GetCap()
-        {
-            VisualElement result;
-            if (s_CapPool.Count > 0) { result = s_CapPool.Pop(); }
-            else
-            {
-                result = new();
-                result.AddToClassList("edge-cap");
-            }
 
-            return result;
-        }
-
-        public int EdgeWidthUnselected { get; private set; } = k_DefaultEdgeWidth;
+        public int EdgeWidthUnselected { get; } = k_DefaultEdgeWidth;
         public int EdgeWidthSelected { get; private set; } = k_DefaultEdgeWidthSelected;
         public Color ColorSelected { get; private set; } = s_DefaultSelectedColor;
         public Color ColorUnselected { get; private set; } = s_DefaultColor;
         public Color ColorGhost { get; private set; } = s_DefaultGhostColor;
-        
+
         public float InterceptWidth { get; set; } = 5;
         public Vector2[] ControlPoints { get; private set; }
-        
+
         public override bool Selected
         {
             get => base.Selected;
@@ -249,6 +231,24 @@ namespace GraphViewPlayer
             }
         }
 
+        private static bool Approximately(Vector2 v1, Vector2 v2) =>
+            Mathf.Approximately(v1.x, v2.x) && Mathf.Approximately(v1.y, v2.y);
+
+        private static void RecycleCap(VisualElement cap) { s_CapPool.Push(cap); }
+
+        private static VisualElement GetCap()
+        {
+            VisualElement result;
+            if (s_CapPool.Count > 0) { result = s_CapPool.Pop(); }
+            else
+            {
+                result = new();
+                result.AddToClassList("edge-cap");
+            }
+
+            return result;
+        }
+
         private void UpdateEdgeCaps()
         {
             if (m_FromCap != null)
@@ -276,7 +276,6 @@ namespace GraphViewPlayer
                 }
             }
         }
-
 
         public virtual void UpdateLayout()
         {
@@ -645,7 +644,9 @@ namespace GraphViewPlayer
 
             //Make sure that we have the place to display Edges with EdgeControl.k_MinEdgeWidth at the lowest level of zoom.
             // float margin = Mathf.Max(EdgeWidth * 0.5f + 1, k_MinEdgeWidth / Graph.minScale);
-            float margin = EdgeWidth / Graph.CurrentScale;//Mathf.Max(EdgeWidth * 0.5f + 1, k_MinEdgeWidth / Graph.minScale);
+            float
+                margin = EdgeWidth /
+                         Graph.CurrentScale; //Mathf.Max(EdgeWidth * 0.5f + 1, k_MinEdgeWidth / Graph.minScale);
             rect.xMin -= margin;
             rect.yMin -= margin;
             rect.width += margin;
@@ -663,7 +664,7 @@ namespace GraphViewPlayer
 
         private void OnGenerateVisualContent(MeshGenerationContext mgc)
         {
-            if (EdgeWidth <= 0) { return; }
+            if (EdgeWidth <= 0 || Graph == null) { return; }
 
             UpdateRenderPoints();
             if (m_RenderPoints.Count == 0)
@@ -804,14 +805,16 @@ namespace GraphViewPlayer
             }
         }
 
-        protected virtual void OnAttachToPanel(AttachToPanelEvent e)
+        protected override void OnAddedToGraphView()
         {
+            base.OnAddedToGraphView();
             Graph.OnViewTransformChanged += MarkDirtyOnTransformChanged;
             OnEdgeChanged();
         }
 
-        protected virtual void OnDetachFromPanel(DetachFromPanelEvent e)
+        protected override void OnRemovedFromGraphView()
         {
+            base.OnRemovedFromGraphView();
             Graph.OnViewTransformChanged -= MarkDirtyOnTransformChanged;
         }
 

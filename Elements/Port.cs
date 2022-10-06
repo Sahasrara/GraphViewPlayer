@@ -5,7 +5,6 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using Unity.VisualScripting;
 using UnityEngine;
 using UnityEngine.UIElements;
 
@@ -33,8 +32,6 @@ namespace GraphViewPlayer
         private bool m_Highlight = true;
         private Color m_PortColor = s_DefaultColor;
         private bool m_PortColorIsInline;
-
-        // protected PortManipulator m_PortManipulator;
 
         protected Port(Node parent, Orientation portOrientation, Direction portDirection, PortCapacity portCapacity)
         {
@@ -71,7 +68,6 @@ namespace GraphViewPlayer
         }
 
         public bool allowMultiDrag { get; set; } = true;
-
         public Node ParentNode { get; }
         public Orientation Orientation { get; }
         public PortCapacity Capacity { get; }
@@ -125,16 +121,6 @@ namespace GraphViewPlayer
 
         public virtual IEnumerable<BaseEdge> Connections => m_Connections;
 
-        public virtual bool Connected(bool ignoreCandidateEdges = true)
-        {
-                foreach (BaseEdge edge in m_Connections)
-                {
-                    if (ignoreCandidateEdges && edge.IsCandidateEdge()) { continue; }
-                    return true;
-                }
-                return false;
-        }
-
         public Color PortColor
         {
             get => m_PortColor;
@@ -147,6 +133,16 @@ namespace GraphViewPlayer
         }
 
         public Color DisabledPortColor { get; private set; } = s_DefaultDisabledColor;
+
+        public virtual bool Connected(bool ignoreCandidateEdges = true)
+        {
+            foreach (BaseEdge edge in m_Connections)
+            {
+                if (ignoreCandidateEdges && edge.IsCandidateEdge()) { continue; }
+                return true;
+            }
+            return false;
+        }
 
         public Edge ConnectTo(Port other) => ConnectTo<Edge>(other);
 
@@ -171,10 +167,7 @@ namespace GraphViewPlayer
         {
             if (edge == null) { throw new ArgumentException("The value passed to Port.Connect is null"); }
 
-            if (!m_Connections.Contains(edge))
-            {
-                m_Connections.Add(edge);
-            }
+            if (!m_Connections.Contains(edge)) { m_Connections.Add(edge); }
 
             UpdateCapColor();
         }
@@ -187,13 +180,7 @@ namespace GraphViewPlayer
             UpdateCapColor();
         }
 
-        public virtual void DisconnectAll()
-        {
-            m_Connections.Clear();
-            UpdateCapColor();
-        }
-
-        public virtual bool CanConnectToMore(bool ignoreCandidateEdges = true) 
+        public virtual bool CanConnectToMore(bool ignoreCandidateEdges = true)
             => Capacity == PortCapacity.Multi || !Connected(ignoreCandidateEdges);
 
         public bool IsConnectedTo(Port other, bool ignoreCandidateEdges = true)
@@ -217,50 +204,26 @@ namespace GraphViewPlayer
         public static Port Create<TEdge>(Node parent, Orientation orientation, Direction direction,
             PortCapacity capacity) where TEdge : BaseEdge, new()
         {
-            Port port = new(parent, orientation, direction, capacity)
-            {
-                // m_PortManipulator = new PortManipulator<TEdge>()
-            };
-
-            // port.AddManipulator(port.m_PortManipulator);
-            return port;
+            return new(parent, orientation, direction, capacity);
         }
 
         public bool SameDirection(Port other) => Direction == other.Direction;
 
         public bool IsOnSameNode(Port other) => other.ParentNode == ParentNode;
 
-        public virtual bool CanConnectTo(Port other, bool ignoreCandidateEdges = true) 
-            => !SameDirection(other) 
-               && !IsOnSameNode(other) 
-               && other.CanConnectToMore(ignoreCandidateEdges) 
-               && CanConnectToMore(ignoreCandidateEdges) 
-               && !IsConnectedTo(other, ignoreCandidateEdges);
-
-        // public override bool ContainsPoint(Vector2 localPoint)
-        // {
-        //     Rect lRect = m_ConnectorBox.layout;
-        //
-        //     Rect boxRect;
-        //     if (direction == Direction.Input)
-        //     {
-        //         boxRect = new(-lRect.xMin, -lRect.yMin,
-        //             lRect.width + lRect.xMin, resolvedStyle.height);
-        //
-        //         boxRect.width += m_ConnectorText.layout.xMin - lRect.xMax;
-        //     }
-        //     else
-        //     {
-        //         boxRect = new(0, -lRect.yMin,
-        //             resolvedStyle.width - lRect.xMin, resolvedStyle.height);
-        //         float leftSpace = lRect.xMin - m_ConnectorText.layout.xMax;
-        //
-        //         boxRect.xMin -= leftSpace;
-        //         boxRect.width += leftSpace;
-        //     }
-        //
-        //     return boxRect.Contains(this.ChangeCoordinatesTo(m_ConnectorBox, localPoint));
-        // }
+        public virtual bool CanConnectTo(Port other, bool ignoreCandidateEdges = true)
+        {
+            // Debug.Log($"{this} - {other} >> same_direction: {SameDirection(other)}," 
+            // + $"same_node: {IsOnSameNode(other)}, "
+            // + $"has_cap: {CanConnectToMore(ignoreCandidateEdges)}, "
+            // + $"other_has_cap: {other.CanConnectToMore(ignoreCandidateEdges)}, "
+            // + $"is_connected: {IsConnectedTo(other, ignoreCandidateEdges)}");
+            return !SameDirection(other)
+                   && !IsOnSameNode(other)
+                   && CanConnectToMore(ignoreCandidateEdges)
+                   && other.CanConnectToMore(ignoreCandidateEdges)
+                   && !IsConnectedTo(other, ignoreCandidateEdges); 
+        }
 
         internal void UpdateCapColor()
         {
@@ -282,22 +245,19 @@ namespace GraphViewPlayer
 
         private void OnCustomStyleResolved(CustomStyleResolvedEvent evt)
         {
-            Color portColorValue = Color.clear;
-            Color disableColorValue = Color.clear;
-
-            if (!m_PortColorIsInline && evt.customStyle.TryGetValue(s_PortColorProperty, out portColorValue))
+            if (!m_PortColorIsInline && evt.customStyle.TryGetValue(s_PortColorProperty, out Color portColorValue))
             {
                 m_PortColor = portColorValue;
                 UpdateCapColor();
             }
-
-            if (evt.customStyle.TryGetValue(s_DisabledPortColorProperty, out disableColorValue))
+            if (evt.customStyle.TryGetValue(s_DisabledPortColorProperty, out Color disableColorValue))
             {
                 DisabledPortColor = disableColorValue;
             }
-
             UpdateConnectorColorAndEnabledState();
         }
+
+        public override string ToString() => PortName;
 
         #region Position
         public event Action<PositionData> OnPositionChange;
@@ -324,19 +284,15 @@ namespace GraphViewPlayer
         public void OnDragBegin(IDragBeginContext context)
         {
             // Cancel checks 
-            if (context.IsCancelled()) { return; }
+            if (context.IsCancelled() || !CanConnectToMore()) { return; }
             if (ParentNode == null)
             {
                 context.CancelDrag();
                 return;
             }
-            
-            // Create edge
-            BaseEdge edge = ParentNode.Graph.CreateEdge();
-            
-            
 
-
+            // Set threshold
+            context.SetDragThreshold(10);
         }
 
         public void OnDrag(IDragContext context)
@@ -347,67 +303,82 @@ namespace GraphViewPlayer
             {
                 context.CancelDrag();
                 return;
-            } 
-            
-            
+            }
+
+            // Check if this is the drag start
+            BaseEdge draggedEdge = context.GetUserData() as BaseEdge;
+            if (draggedEdge == null)
+            {
+                // Create edge
+                draggedEdge = ParentNode.Graph.CreateEdge();
+                draggedEdge.SetPortByDirection(this);
+                ParentNode.Graph.AddElement(draggedEdge);
+            }
+
+            // Drag
+            draggedEdge.OnDrag(context);
         }
 
         public void OnDragEnd(IDragEndContext context)
         {
-            
+            if (context.GetUserData() is BaseEdge edge) edge.OnDragEnd(context);
         }
 
         public void OnDragCancel(IDragCancelContext context)
         {
-            
+            if (context.GetUserData() is BaseEdge edge) edge.OnDragCancel(context);
         }
         #endregion
-        
+
         #region IDroppable
         public void OnDropEnter(IDropEnterContext context)
         {
-            if (context.Draggable is BaseEdge edge)
+            if (context.GetUserData() is BaseEdge draggedEdge)
             {
                 // Grab dragged port
-                Port draggedPort = context.GetUserData() as Port;
-                if (draggedPort == null) throw new("Edge user data not set properly"); 
-                Port anchoredPort = draggedPort == edge.Input ? edge.Output : edge.Input; 
-                
+                Port anchoredPort = draggedEdge.IsInputPositionOverriden() ? draggedEdge.Output : draggedEdge.Input;
+
                 // Cancel drags from invalid ports
-                if (!CanConnectTo(anchoredPort)) return;
-                
+                if (!CanConnectTo(anchoredPort)) { return; }
+
                 // Hover state
-                m_ConnectorBoxCap.style.backgroundColor = PortColor; 
+                m_ConnectorBoxCap.style.backgroundColor = PortColor;
             }
         }
 
         public void OnDrop(IDropContext context)
         {
             // See if we can form a connection 
-            if (context.Draggable is BaseEdge draggedEdge)
+            if (context.GetUserData() is BaseEdge draggedEdge)
             {
-                // Grab dragged port
-                Port draggedPort = context.GetUserData() as Port;
-                if (draggedPort == null) throw new("Edge drag didn't set user data properly");
-                Port anchoredPort; 
+                // Grab dragged and anchored ports
+                Port anchoredPort;
+                Port draggedPort; 
+                if (draggedEdge.IsInputPositionOverriden())
+                {
+                    anchoredPort = draggedEdge.Output;
+                    draggedPort = draggedEdge.Input;
+                }
+                else
+                {
+                    anchoredPort = draggedEdge.Input;
+                    draggedPort = draggedEdge.Output; 
+                }
                 
-                if (draggedPort.allowMultiDrag)
+                // Drop them
+                if (draggedPort != null && draggedPort.allowMultiDrag)
                 {
                     foreach (BaseEdge edge in draggedPort.Connections.ToArray())
                     {
                         if (edge.Selected)
                         {
-                            anchoredPort = draggedPort == draggedEdge.Input ? edge.Output : edge.Input;
-                            ConnectToPortWithEdge(anchoredPort, edge);
+                            anchoredPort = draggedPort == edge.Input ? edge.Output : edge.Input;
+                            ConnectToPortWithEdge(context, anchoredPort, edge);
                         }
                     }
                 }
-                else
-                {
-                    anchoredPort = draggedPort == draggedEdge.Input ? draggedEdge.Output : draggedEdge.Input;
-                    ConnectToPortWithEdge(anchoredPort, draggedEdge);
-                }
-                
+                else ConnectToPortWithEdge(context, anchoredPort, draggedEdge);
+
                 // Update caps
                 UpdateCapColor();
             }
@@ -415,24 +386,24 @@ namespace GraphViewPlayer
 
         public void OnDropExit(IDropExitContext context)
         {
-            if (context.Draggable is BaseEdge)
-            {
-                UpdateCapColor();
-            }
+            if (context.GetUserData() is BaseEdge) { UpdateCapColor(); }
         }
 
-        private void ConnectToPortWithEdge(Port anchoredPort, BaseEdge draggedEdge)
+        private void ConnectToPortWithEdge(IDropContext context, Port anchoredPort, BaseEdge draggedEdge)
         {
             // Cancel invalid drags or already extant edges  
-            if (SameDirection(anchoredPort) 
-                || IsOnSameNode(anchoredPort)
-                || !CanConnectToMore() 
-                || !anchoredPort.CanConnectToMore() 
-                || anchoredPort.IsConnectedTo(this, false))
+            if (!CanConnectTo(anchoredPort))
             {
+                // Delete the edge if it's a candidate
+                if (!draggedEdge.IsRealEdge())
+                {
+                    ParentNode.Graph.IlluminateAllPorts();
+                    ParentNode.Graph.RemoveElement(draggedEdge);
+                }
+                context.CancelDrag();
                 return;
             }
-                
+
             // Capture the ports being connected
             Port inputPort;
             Port outputPort;
@@ -446,12 +417,20 @@ namespace GraphViewPlayer
                 inputPort = this;
                 outputPort = anchoredPort;
             }
-                
-            // If this is an existing edge, delete it and clean up the temporary edge object
-            if (draggedEdge.IsRealEdge()) ParentNode.Graph.OnEdgeDelete(draggedEdge);
+
+            // If this is an existing edge, delete it unless we're reconnecting after a disconnect
+            if (draggedEdge.IsRealEdge())
+            {
+                if (draggedEdge.Input == inputPort && draggedEdge.Output == outputPort)
+                {
+                    context.CancelDrag(); 
+                    return;
+                }
+                ParentNode.Graph.OnEdgeDelete(draggedEdge);
+            }
             // This was a temporary edge, reset it and remove from the graph
-            else ParentNode.Graph.RemoveElement(draggedEdge); 
-                
+            else { ParentNode.Graph.RemoveElement(draggedEdge); }
+
             // Create new edge (reusing the old deleted edge)
             draggedEdge.Input = inputPort;
             draggedEdge.Output = outputPort;
@@ -459,32 +438,5 @@ namespace GraphViewPlayer
             ParentNode.Graph.OnEdgeCreate(draggedEdge);
         }
         #endregion
-        
-        public override string ToString() => PortName;
     }
 }
-
-
-// [EventInterest(typeof(MouseEnterEvent), typeof(MouseLeaveEvent), typeof(MouseUpEvent))]
-// protected override void ExecuteDefaultAction(EventBase evt)
-// {
-//     base.ExecuteDefaultAction(evt);
-//
-//     if (m_ConnectorBox == null || m_ConnectorBoxCap == null) { return; }
-//
-//     // Only update the box cap background if the port is enabled or highlighted.
-//     if (Highlight)
-//     {
-//         if (evt.eventTypeId == MouseEnterEvent.TypeId())
-//         {
-//             m_ConnectorBoxCap.style.backgroundColor = PortColor;
-//         }
-//         else if (evt.eventTypeId == MouseLeaveEvent.TypeId()) { UpdateCapColor(); }
-//     }
-//     else if (evt.eventTypeId == MouseUpEvent.TypeId())
-//     {
-//         // When an edge connect ends, we need to clear out the hover states
-//         MouseUpEvent mouseUp = (MouseUpEvent)evt;
-//         if (!layout.Contains(mouseUp.localMousePosition)) { UpdateCapColor(); }
-//     }
-// }

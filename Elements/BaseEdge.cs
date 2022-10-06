@@ -25,7 +25,6 @@ namespace GraphViewPlayer
                    | Capabilities.Deletable
                    | Capabilities.Movable;
 
-
         public bool IsGhostEdge { get; set; }
 
         public Port Output
@@ -45,7 +44,7 @@ namespace GraphViewPlayer
             get
             {
                 if (m_OutputPositionOverridden) { return m_OutputPositionOverride; }
-                if (Output != null && Graph != null) return m_OutputPortPosition;
+                if (Output != null && Graph != null) { return m_OutputPortPosition; }
                 return Vector2.zero;
             }
         }
@@ -55,7 +54,7 @@ namespace GraphViewPlayer
             get
             {
                 if (m_InputPositionOverridden) { return m_InputPositionOverride; }
-                if (Input != null && Graph != null) return m_InputPortPosition;
+                if (Input != null && Graph != null) { return m_InputPortPosition; }
                 return Vector2.zero;
             }
         }
@@ -101,29 +100,30 @@ namespace GraphViewPlayer
         protected override void OnAddedToGraphView()
         {
             UpdateCachedInputPortPosition();
-            UpdateCachedOutputPortPosition(); 
+            UpdateCachedOutputPortPosition();
         }
-        
+
         protected override void OnRemovedFromGraphView()
         {
             Disconnect();
+            ResetLayer();
             UnsetPositionOverrides();
         }
         #endregion
-        
+
         #region Ports
         public void SetPortByDirection(Port port)
         {
             if (port.Direction == Direction.Input) { Input = port; }
             else { Output = port; }
         }
-        
+
         public void Disconnect()
         {
             Input = null;
             Output = null;
         }
- 
+
         private void TrackPort(Port port)
         {
             port.OnPositionChange += OnPortPositionChanged;
@@ -176,14 +176,16 @@ namespace GraphViewPlayer
 
         private void UpdateCachedInputPortPosition()
         {
+            if (Graph == null || Input == null) { return; }
             m_InputPortPosition = Graph.contentViewContainer.WorldToLocal(Input.GetGlobalCenter());
-            if (!m_InputPositionOverridden) m_InputPositionOverride = m_InputPortPosition;
+            if (!m_InputPositionOverridden) { m_InputPositionOverride = m_InputPortPosition; }
         }
 
         private void UpdateCachedOutputPortPosition()
         {
+            if (Graph == null || Output == null) { return; }
             m_OutputPortPosition = Graph.contentViewContainer.WorldToLocal(Output.GetGlobalCenter());
-            if (!m_OutputPositionOverridden) m_OutputPositionOverride = m_OutputPortPosition;
+            if (!m_OutputPositionOverridden) { m_OutputPositionOverride = m_OutputPortPosition; }
         }
         #endregion
 
@@ -223,8 +225,8 @@ namespace GraphViewPlayer
 
         public override Vector2 GetCenter()
         {
-            if (m_InputPositionOverridden) return m_InputPositionOverride;
-            if (m_OutputPositionOverridden) return m_OutputPositionOverride;
+            if (m_InputPositionOverridden) { return m_InputPositionOverride; }
+            if (m_OutputPositionOverridden) { return m_OutputPositionOverride; }
             return base.GetCenter();
         }
         #endregion
@@ -242,9 +244,6 @@ namespace GraphViewPlayer
 
             // Set Drag Threshold
             context.SetDragThreshold(10);
-
-            // Track for panning
-            Graph.TrackElementForPan(this);
         }
 
         public void OnDrag(IDragContext context)
@@ -258,23 +257,39 @@ namespace GraphViewPlayer
             }
 
             // This is the first time we breached the drag threshold
+            Port anchoredPort;
             bool isDragStart = context.GetUserData() == null;
             if (isDragStart)
             {
                 // Record detached port (whichever is closest to the mouse)
-                Vector2 inputPos = Input.GetGlobalCenter();
-                Vector2 outputPos = Output.GetGlobalCenter();
-                float distanceFromInput = (context.MousePosition - inputPos).sqrMagnitude;
-                float distanceFromOutput = (context.MousePosition - outputPos).sqrMagnitude;
-                context.SetUserData(distanceFromInput < distanceFromOutput ? Input : Output);
-            }
+                if (Input == null) { anchoredPort = Output; }
+                else if (Output == null) { anchoredPort = Input; }
+                else
+                {
+                    Vector2 inputPos = Input.GetGlobalCenter();
+                    Vector2 outputPos = Output.GetGlobalCenter();
+                    float distanceFromInput = (context.MousePosition - inputPos).sqrMagnitude;
+                    float distanceFromOutput = (context.MousePosition - outputPos).sqrMagnitude;
+                    anchoredPort = distanceFromInput < distanceFromOutput ? Output : Input;
+                }
 
-            // Grab detached port
-            Port draggedPort = context.GetUserData() as Port;
-            if (draggedPort == null) throw new("Edge drag didn't set user data properly"); 
+                // Set user data
+                context.SetUserData(this);
+
+                // Move to front
+                Layer = int.MaxValue;
+
+                // Track for panning
+                Graph.TrackElementForPan(this);
+            }
+            else { anchoredPort = IsInputPositionOverriden() ? Output : Input; }
+
+            // Grab dragged port
+            Port draggedPort = Input == anchoredPort ? Output : Input;
+
             // Vector2 newPosition = GetOutputPositionOverride() + context.MouseDelta / Graph.CurrentScale; 
             Vector2 newPosition = Graph.contentViewContainer.WorldToLocal(context.MousePosition);
-            if (draggedPort.allowMultiDrag)
+            if (draggedPort != null && draggedPort.allowMultiDrag)
             {
                 foreach (BaseEdge edge in draggedPort.Connections)
                 {
@@ -287,58 +302,52 @@ namespace GraphViewPlayer
             }
             else
             {
-                if (draggedPort.Direction == Direction.Output) { SetInputPositionOverride(newPosition); }
+                if (anchoredPort.Direction == Direction.Output) { SetInputPositionOverride(newPosition); }
                 else { SetOutputPositionOverride(newPosition); }
             }
 
-            // Only light compatible anchors when dragging an edge.
-            if (isDragStart) IlluminateCompatiblePorts(Input == draggedPort ? Output : Input);
+            // Only light compatible anchors when dragging an edge, otherwise we can't tell if it's a candidate edge.
+            if (isDragStart) { Graph.IlluminateCompatiblePorts(Input == anchoredPort ? Input : Output); }
         }
 
         public void OnDragEnd(IDragEndContext context)
         {
             // Could have been deleted
-            if (Graph == null) return;
-            
+            if (Graph == null) { return; }
+
             // Untrack for panning
             Graph.UntrackElementForPan(this);
-            
+
             // Reset position
+            // TODO - is this really required?
             foreach (BaseEdge edge in Graph.EdgesSelected)
             {
+                edge.ResetLayer();
                 edge.UnsetPositionOverrides();
             }
-            
+
             // Reset ports
-            IlluminateAllPorts();
+            Graph.IlluminateAllPorts();
         }
 
         public void OnDragCancel(IDragCancelContext context)
         {
             // Could have been deleted
-            if (Graph == null) return;
+            if (Graph == null) { return; }
 
             // Untrack for panning
             Graph.UntrackElementForPan(this, true);
-            
+
             // Reset position
+            // TODO - is this really required?
             foreach (BaseEdge edge in Graph.EdgesSelected)
             {
+                edge.ResetLayer();
                 edge.UnsetPositionOverrides();
             }
-            
+
             // Reset ports
-            IlluminateAllPorts();
-        }
-
-        private void IlluminateCompatiblePorts(Port port)
-        {
-            foreach (Port otherPort in Graph.Ports) otherPort.Highlight = port.CanConnectTo(otherPort);
-        }
-
-        private void IlluminateAllPorts()
-        {
-            foreach (Port otherPort in Graph.Ports) otherPort.Highlight = true;
+            Graph.IlluminateAllPorts();
         }
         #endregion
     }

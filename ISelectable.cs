@@ -3,17 +3,14 @@
 // https://unity3d.com/legal/licenses/Unity_Reference_Only_License
 
 using UnityEngine;
-using UnityEngine.UIElements;
 
 namespace GraphViewPlayer
 {
     public interface ISelectable
     {
-        bool IsSelectable();
-        bool HitTest(Vector2 localPoint);
+        ISelector Selector { get; }
+        bool Selected { get; set; }
         bool Overlaps(Rect rectangle);
-        void Select(VisualElement selectionContainer, bool additive);
-        void Unselect(VisualElement selectionContainer);
-        bool IsSelected(VisualElement selectionContainer);
+        bool ContainsPoint(Vector2 localPoint);
     }
 }

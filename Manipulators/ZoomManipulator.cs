@@ -8,7 +8,7 @@ using UnityEngine.UIElements;
 
 namespace GraphViewPlayer
 {
-    public class ContentZoomer : Manipulator
+    public class ZoomManipulator : Manipulator
     {
         public static readonly float DefaultReferenceScale = 1;
         public static readonly float DefaultMinScale = 0.25f;
@@ -16,28 +16,24 @@ namespace GraphViewPlayer
         public static readonly float DefaultScaleStep = 0.15f;
 
         /// <summary>
-        /// Scale that should be computed when scroll wheel offset is at zero.
+        ///     Scale that should be computed when scroll wheel offset is at zero.
         /// </summary>
         public float referenceScale { get; set; } = DefaultReferenceScale;
-
         public float minScale { get; set; } = DefaultMinScale;
         public float maxScale { get; set; } = DefaultMaxScale;
 
         /// <summary>
-        /// Relative scale change when zooming in/out (e.g. For 15%, use 0.15).
+        ///     Relative scale change when zooming in/out (e.g. For 15%, use 0.15).
         /// </summary>
         /// <remarks>
-        /// Depending on the values of <c>minScale</c>, <c>maxScale</c> and <c>scaleStep</c>, it is not guaranteed that
-        /// the first and last two scale steps will correspond exactly to the value specified in <c>scaleStep</c>.
+        ///     Depending on the values of <c>minScale</c>, <c>maxScale</c> and <c>scaleStep</c>, it is not guaranteed that
+        ///     the first and last two scale steps will correspond exactly to the value specified in <c>scaleStep</c>.
         /// </remarks>
         public float scaleStep { get; set; } = DefaultScaleStep;
 
-        [Obsolete("ContentZoomer.keepPixelCacheOnZoom is deprecated and has no effect")]
-        public bool keepPixelCacheOnZoom { get; set; }
-
         protected override void RegisterCallbacksOnTarget()
         {
-            var graphView = target as GraphView;
+            GraphView graphView = target as GraphView;
             if (graphView == null)
             {
                 throw new InvalidOperationException("Manipulator can only be added to a GraphView");
@@ -46,10 +42,7 @@ namespace GraphViewPlayer
             target.RegisterCallback<WheelEvent>(OnWheel);
         }
 
-        protected override void UnregisterCallbacksFromTarget()
-        {
-            target.UnregisterCallback<WheelEvent>(OnWheel);
-        }
+        protected override void UnregisterCallbacksFromTarget() { target.UnregisterCallback<WheelEvent>(OnWheel); }
 
         // Compute the parameters of our exponential model:
         // z(w) = (1 + s) ^ (w + a) + b
@@ -61,7 +54,8 @@ namespace GraphViewPlayer
         // The factors a and b are calculated in order to satisfy the conditions:
         // z(0) = referenceZoom
         // z(1) = referenceZoom * (1 + zoomStep)
-        private static float CalculateNewZoom(float currentZoom, float wheelDelta, float zoomStep, float referenceZoom, float minZoom, float maxZoom)
+        private static float CalculateNewZoom(float currentZoom, float wheelDelta, float zoomStep, float referenceZoom,
+            float minZoom, float maxZoom)
         {
             if (minZoom <= 0)
             {
@@ -70,12 +64,14 @@ namespace GraphViewPlayer
             }
             if (referenceZoom < minZoom)
             {
-                Debug.LogError($"The reference zoom ({referenceZoom}) must be greater than or equal to the minimum zoom ({minZoom}).");
+                Debug.LogError(
+                    $"The reference zoom ({referenceZoom}) must be greater than or equal to the minimum zoom ({minZoom}).");
                 return currentZoom;
             }
             if (referenceZoom > maxZoom)
             {
-                Debug.LogError($"The reference zoom ({referenceZoom}) must be less than or equal to the maximum zoom ({maxZoom}).");
+                Debug.LogError(
+                    $"The reference zoom ({referenceZoom}) must be less than or equal to the maximum zoom ({maxZoom}).");
                 return currentZoom;
             }
             if (zoomStep < 0)
@@ -86,10 +82,7 @@ namespace GraphViewPlayer
 
             currentZoom = Mathf.Clamp(currentZoom, minZoom, maxZoom);
 
-            if (Mathf.Approximately(wheelDelta, 0))
-            {
-                return currentZoom;
-            }
+            if (Mathf.Approximately(wheelDelta, 0)) { return currentZoom; }
 
             // Calculate the factors of our model:
             double a = Math.Log(referenceZoom, 1 + zoomStep);
@@ -110,14 +103,8 @@ namespace GraphViewPlayer
             currentWheel += wheelDelta;
 
             // Assimilate to the boundary when it is nearby.
-            if (currentWheel > maxWheel - 0.5)
-            {
-                return maxZoom;
-            }
-            if (currentWheel < minWheel + 0.5)
-            {
-                return minZoom;
-            }
+            if (currentWheel > maxWheel - 0.5) { return maxZoom; }
+            if (currentWheel < minWheel + 0.5) { return minZoom; }
 
             // Snap the wheel to the unit grid.
             currentWheel = Math.Round(currentWheel);
@@ -129,15 +116,13 @@ namespace GraphViewPlayer
             return (float)(Math.Pow(1 + zoomStep, currentWheel + a) + b);
         }
 
-        void OnWheel(WheelEvent evt)
+        private void OnWheel(WheelEvent evt)
         {
-            var graphView = target as GraphView;
-            if (graphView == null)
-                return;
+            GraphView graphView = target as GraphView;
+            if (graphView == null) { return; }
 
             IPanel panel = (evt.target as VisualElement)?.panel;
-            if (panel.GetCapturingElement(PointerId.mousePointerId) != null)
-                return;
+            if (panel.GetCapturingElement(PointerId.mousePointerId) != null) { return; }
 
             Vector3 position = graphView.viewTransform.position;
             Vector3 scale = graphView.viewTransform.scale;
@@ -148,7 +133,7 @@ namespace GraphViewPlayer
             float x = zoomCenter.x + graphView.contentViewContainer.layout.x;
             float y = zoomCenter.y + graphView.contentViewContainer.layout.y;
 
-            position += Vector3.Scale(new Vector3(x, y, 0), scale);
+            position += Vector3.Scale(new(x, y, 0), scale);
 
             // Apply the new zoom.
             float zoom = CalculateNewZoom(scale.y, -evt.delta.y, scaleStep, referenceScale, minScale, maxScale);
@@ -156,7 +141,7 @@ namespace GraphViewPlayer
             scale.y = zoom;
             scale.z = 1;
 
-            position -= Vector3.Scale(new Vector3(x, y, 0), scale);
+            position -= Vector3.Scale(new(x, y, 0), scale);
 
             graphView.UpdateViewTransform(position, scale);
 

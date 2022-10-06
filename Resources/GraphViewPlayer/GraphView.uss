@@ -1,5 +1,5 @@
 :root {
-    --node-separator-color: black;/*#232223;*/
+    --node-separator-color: black; /*#232223;*/
 }
 
 .grid-background {
@@ -16,24 +16,30 @@
     font-size: 12px;
 }
 
-.graph-view-container {
-    flex-grow: 1;
-    flex-shrink: 0;
-    flex-basis: 0;
+/*.graph-view-container {*/
+/*    flex-grow: 1;*/
+/*    flex-shrink: 0;*/
+/*    flex-basis: 0;*/
+/*}*/
+
+.backstop {
+    position: absolute;
+    width: 100%;
+    height: 100%;
 }
 
 .content-view-container {
     position: absolute;
-    transform-origin: 0 0;
+    /*transform-origin: 0 0;*/
 }
 
 .graph-element {
-    position: absolute; 
+    position: absolute;
 }
 
 .node {
     color: #b2b2b2;
-    background-color: rgba(25,25,25,1);
+    background-color: rgba(25, 25, 25, 1);
     position: absolute;
     border-radius: 6px;
     border-width: 1px 1px 1px 1px;
@@ -42,20 +48,20 @@
 }
 
 .node-selected {
-    border-color: rgba(68,192,255,1);
+    border-color: rgba(68, 192, 255, 1);
 }
 
 .node-title {
     flex-direction: row;
     justify-content: space-between;
-    background-color: rgba(63,63,63,0.804);
+    background-color: rgba(63, 63, 63, 0.804);
     height: 36px;
     border-top-left-radius: 6px;
     border-top-right-radius: 6px;
 }
 
 .node-title-label {
-    color: rgba(193,193,193,1);
+    color: rgba(193, 193, 193, 1);
     font-size: 12px;
     margin: 6px;
     padding-left: 2px;
@@ -69,7 +75,7 @@
     border-top-width: 1px;
     border-bottom-width: 1px;
     border-color: var(--node-separator-color);
-    background-color: rgba(46,46,46,0.804);
+    background-color: rgba(46, 46, 46, 0.804);
     justify-content: space-between;
 }
 
@@ -79,7 +85,7 @@
     /*flex-wrap: nowrap;*/
     /*flex-grow: 1;*/
     /*flex-shrink: 1;*/
-    background-color: rgba(60,60,60,0.804);
+    background-color: rgba(60, 60, 60, 0.804);
     /*border-right-width: 1px;*/
     /*border-color: var(--node-separator-color);*/
     padding: 4px;
@@ -91,14 +97,14 @@
     /*flex-wrap: nowrap;*/
     /*flex-grow: 1;*/
     /*flex-shrink: 1;*/
-    background-color: rgba(46,46,46,0.804);
+    background-color: rgba(46, 46, 46, 0.804);
     /*border-left-width: 1px;*/
     /*border-color: var(--node-separator-color);*/
     padding: 4px;
 }
 
 .node-extension {
-    background-color: rgba(63,63,63,0.804);
+    background-color: rgba(63, 63, 63, 0.804);
     flex-direction: column;
     padding-bottom: 12px;
     border-bottom-left-radius: 6px;
@@ -121,13 +127,21 @@
     margin-left: auto;
 }
 
-.port-label {
-    color: #b2b2b2;
+.port-label-container {
     margin: 0px;
     padding-top: 0px;
     padding-bottom: 0px;
     padding-left: 5px;
     padding-right: 5px;
+}
+
+.port-label {
+    color: #b2b2b2;
+    /*margin: 0px;*/
+    /*padding-top: 0px;*/
+    /*padding-bottom: 0px;*/
+    /*padding-left: 5px;*/
+    /*padding-right: 5px;*/
 }
 
 .port-connector-box {
@@ -154,16 +168,12 @@
     --edge-color-selected: rgba(240, 240, 240, 1);
     --edge-color-ghost: rgba(85, 85, 85, 1);
     --layer: -10;
-    transform-origin: 0 0;
+    /*transform-origin: 0 0;*/
     position: absolute;
 }
 
-.edge-control{
-    position: absolute; 
-}
-
 .edge-cap {
-    border-radius: 100% 100% 100% 100%;/*12*/
+    border-radius: 100% 100% 100% 100%; /*12*/
     width: 4px;
     height: 4px;
     background-color: rgba(146, 146, 146, 1);

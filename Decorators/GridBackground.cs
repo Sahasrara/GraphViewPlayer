@@ -10,25 +10,26 @@ namespace GraphViewPlayer
 {
     public class GridBackground : VisualElement
     {
-        static CustomStyleProperty<float> s_SpacingProperty = new("--grid-spacing");
-        static CustomStyleProperty<int> s_ThickLinesProperty = new("--grid-thick-lines");
-        static CustomStyleProperty<Color> s_LineColorProperty = new("--grid-line-color");
-        static CustomStyleProperty<Color> s_ThickLineColorProperty = new("--grid-thick-line-color");
-        static CustomStyleProperty<Color> s_GridBackgroundColorProperty = new("--grid-background-color");
+        private static readonly CustomStyleProperty<float> s_SpacingProperty = new("--grid-spacing");
+        private static readonly CustomStyleProperty<int> s_ThickLinesProperty = new("--grid-thick-lines");
+        private static readonly CustomStyleProperty<Color> s_LineColorProperty = new("--grid-line-color");
+        private static readonly CustomStyleProperty<Color> s_ThickLineColorProperty = new("--grid-thick-line-color");
+        private static readonly CustomStyleProperty<Color> s_GridBackgroundColorProperty =
+            new("--grid-background-color");
 
-        static readonly float s_DefaultSpacing = 50f;
-        static readonly int s_DefaultThickLines = 10;
-        static readonly Color s_DefaultLineColor = new Color(0f, 0f, 0f, 0.18f);
-        static readonly Color s_DefaultThickLineColor = new Color(0f, 0f, 0f, 0.38f);
-        static readonly Color s_DefaultGridBackgroundColor = new Color(0.17f, 0.17f, 0.17f, 1.0f);
-
-        float m_Spacing = s_DefaultSpacing;
-        int m_ThickLines = s_DefaultThickLines;
-        Color m_LineColor = s_DefaultLineColor;
-        Color m_ThickLineColor = s_DefaultThickLineColor;
+        private static readonly float s_DefaultSpacing = 50f;
+        private static readonly int s_DefaultThickLines = 10;
+        private static readonly Color s_DefaultLineColor = new(0f, 0f, 0f, 0.18f);
+        private static readonly Color s_DefaultThickLineColor = new(0f, 0f, 0f, 0.38f);
+        private static readonly Color s_DefaultGridBackgroundColor = new(0.17f, 0.17f, 0.17f, 1.0f);
 
         private VisualElement m_Container;
         private GraphView m_GraphView;
+        private Color m_LineColor = s_DefaultLineColor;
+
+        private float m_Spacing = s_DefaultSpacing;
+        private Color m_ThickLineColor = s_DefaultThickLineColor;
+        private int m_ThickLines = s_DefaultThickLines;
 
         public GridBackground()
         {
@@ -42,44 +43,29 @@ namespace GraphViewPlayer
             RegisterCallback<CustomStyleResolvedEvent>(OnCustomStyleResolved);
         }
 
-        private Vector3 Clip(Rect clipRect, Vector3 _in)
+        private Vector3 Clip(Rect clipRect, Vector3 toClip)
         {
-            if (_in.x < clipRect.xMin)
-                _in.x = clipRect.xMin;
-            if (_in.x > clipRect.xMax)
-                _in.x = clipRect.xMax;
-
-            if (_in.y < clipRect.yMin)
-                _in.y = clipRect.yMin;
-            if (_in.y > clipRect.yMax)
-                _in.y = clipRect.yMax;
-
-            return _in;
+            if (toClip.x < clipRect.xMin) { toClip.x = clipRect.xMin; }
+            if (toClip.x > clipRect.xMax) { toClip.x = clipRect.xMax; }
+            if (toClip.y < clipRect.yMin) { toClip.y = clipRect.yMin; }
+            if (toClip.y > clipRect.yMax) { toClip.y = clipRect.yMax; }
+            return toClip;
         }
 
         private void OnCustomStyleResolved(CustomStyleResolvedEvent e)
         {
-            float spacingValue;
-            int thicklinesValue;
-            Color thicklineColorValue;
-            Color lineColorValue;
-            Color gridColorValue;
-
-            ICustomStyle customStyle = e.customStyle;
-            if (customStyle.TryGetValue(s_SpacingProperty, out spacingValue))
-                m_Spacing = spacingValue;
-
-            if (customStyle.TryGetValue(s_ThickLinesProperty, out thicklinesValue))
-                m_ThickLines = thicklinesValue;
-
-            if (customStyle.TryGetValue(s_ThickLineColorProperty, out thicklineColorValue))
-                m_ThickLineColor = thicklineColorValue;
-
-            if (customStyle.TryGetValue(s_LineColorProperty, out lineColorValue))
-                m_LineColor = lineColorValue;
-
-            if (customStyle.TryGetValue(s_GridBackgroundColorProperty, out gridColorValue))
-                style.backgroundColor = gridColorValue;
+            ICustomStyle newStyle = e.customStyle;
+            if (newStyle.TryGetValue(s_SpacingProperty, out float spacing)) { m_Spacing = spacing; }
+            if (newStyle.TryGetValue(s_ThickLinesProperty, out int thickLine)) { m_ThickLines = thickLine; }
+            if (newStyle.TryGetValue(s_ThickLineColorProperty, out Color thickLineColor))
+            {
+                m_ThickLineColor = thickLineColor;
+            }
+            if (newStyle.TryGetValue(s_LineColorProperty, out Color lineColor)) { m_LineColor = lineColor; }
+            if (newStyle.TryGetValue(s_GridBackgroundColorProperty, out Color gridColor))
+            {
+                style.backgroundColor = gridColor;
+            }
         }
 
         private void OnAttachEvent(AttachToPanelEvent evt)
@@ -94,17 +80,17 @@ namespace GraphViewPlayer
             m_Container = m_GraphView.contentViewContainer;
 
             // Listen for Zoom/Pan Changes
-            m_GraphView.viewTransformChanged += RequestRepaint;
+            m_GraphView.OnViewTransformChanged += RequestRepaint;
         }
 
         private void DetachFromPanelEvent(DetachFromPanelEvent evt)
         {
             // Stop Listening for Zoom/Pan Changes
-            m_GraphView.viewTransformChanged += RequestRepaint;
-        } 
-        
+            m_GraphView.OnViewTransformChanged += RequestRepaint;
+        }
+
         private void RequestRepaint(GraphView graphView) => MarkDirtyRepaint();
-        
+
         private void OnGenerateVisualContent(MeshGenerationContext ctx)
         {
             Rect clientRect = m_GraphView.layout;
@@ -128,7 +114,7 @@ namespace GraphViewPlayer
             Vector3 from = new(clientRect.x, clientRect.y, 0.0f);
             Vector3 to = new(clientRect.x, clientRect.height, 0.0f);
 
-            var tx = Matrix4x4.TRS(containerTranslation, Quaternion.identity, Vector3.one);
+            Matrix4x4 tx = Matrix4x4.TRS(containerTranslation, Quaternion.identity, Vector3.one);
 
             from = tx.MultiplyPoint(from);
             to = tx.MultiplyPoint(to);
@@ -175,8 +161,8 @@ namespace GraphViewPlayer
             }
 
             // horizontal lines
-            from = new Vector3(clientRect.x, clientRect.y, 0.0f);
-            to = new Vector3(clientRect.x + clientRect.width, clientRect.y, 0.0f);
+            from = new(clientRect.x, clientRect.y, 0.0f);
+            to = new(clientRect.x + clientRect.width, clientRect.y, 0.0f);
 
             from.x += containerPosition.x * containerScale.x;
             from.y += containerPosition.y * containerScale.y;

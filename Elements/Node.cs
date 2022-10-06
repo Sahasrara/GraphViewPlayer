@@ -2,87 +2,32 @@
 // Copyright (c) Unity Technologies. For terms of use, see
 // https://unity3d.com/legal/licenses/Unity_Reference_Only_License
 
-using System;
-using System.Collections.Generic;
-using System.Linq;
 using UnityEngine;
 using UnityEngine.UIElements;
 
 namespace GraphViewPlayer
 {
-    public class Node : GraphElement, ICollectibleElement
+    public class Node : GraphElement, IDraggable //, ICollectibleElement
     {
-        public VisualElement mainContainer { get; private set; }
-        public VisualElement titleContainer { get; private set; }
-        public VisualElement inputContainer { get; private set; }
-        public VisualElement outputContainer { get; private set; }
-
-        //This directly contains input and output containers
-        public VisualElement topContainer { get; private set; }
-        public VisualElement extensionContainer { get; private set; }
-
-        private GraphView m_GraphView;
-        // TODO Maybe make protected and move to GraphElement!
-        private GraphView graphView
-        {
-            get
-            {
-                if (m_GraphView == null)
-                {
-                    m_GraphView = GetFirstAncestorOfType<GraphView>();
-                }
-                return m_GraphView;
-            }
-        }
-
-        private readonly Label m_TitleLabel;
-        public override string title
-        {
-            get { return m_TitleLabel != null ? m_TitleLabel.text : string.Empty; }
-            set { if (m_TitleLabel != null) m_TitleLabel.text = value; }
-        }
-
-        public UQueryState<Port> inputPorts;
-        public UQueryState<Port> outputPorts;
-
-        public override Rect GetPosition()
-        {
-            if (resolvedStyle.position == Position.Absolute)
-                return new Rect(resolvedStyle.left, resolvedStyle.top, layout.width, layout.height);
-            return layout;
-        }
-
-        public override void SetPosition(Rect newPos)
-        {
-            style.position = Position.Absolute;
-            style.left = newPos.x;
-            style.top = newPos.y;
-        }
-
-        public virtual Port InstantiatePort(Orientation orientation, Direction direction, Port.Capacity capacity)
-        {
-            return Port.Create<Edge>(orientation, direction, capacity);
-        }
-
         public Node()
         {
             // Root Container
             mainContainer = this;
-           
+
             // Title Label
-            m_TitleLabel = new() { pickingMode = PickingMode.Ignore };
-            m_TitleLabel.AddToClassList("node-title-label");
+            titleLabel = new() { pickingMode = PickingMode.Ignore };
+            titleLabel.AddToClassList("node-title-label");
 
             // Title Container
             titleContainer = new() { pickingMode = PickingMode.Ignore };
             titleContainer.AddToClassList("node-title");
-            titleContainer.Add(m_TitleLabel);
+            titleContainer.Add(titleLabel);
             hierarchy.Add(titleContainer);
 
             // Input Container
             inputContainer = new() { pickingMode = PickingMode.Ignore };
             inputContainer.AddToClassList("node-io-input");
-            
+
             // Output Container
             outputContainer = new() { pickingMode = PickingMode.Ignore };
             outputContainer.AddToClassList("node-io-output");
@@ -99,37 +44,59 @@ namespace GraphViewPlayer
             extensionContainer.AddToClassList("node-extension");
             hierarchy.Add(extensionContainer);
 
-            elementTypeColor = new Color(0.9f, 0.9f, 0.9f, 0.5f);
-
+            // Style
             AddToClassList("node");
 
-            capabilities
-                |= Capabilities.Selectable
-                | Capabilities.Movable
-                | Capabilities.Deletable
-                | Capabilities.Ascendable
-                // | Capabilities.Copiable
-                // | Capabilities.Snappable
-                // | Capabilities.Groupable
+            // Capability
+            Capabilities |= Capabilities.Selectable
+                            | Capabilities.Movable
+                            | Capabilities.Deletable
+                            | Capabilities.Ascendable
                 ;
             usageHints = UsageHints.DynamicTransform;
 
             // Cache Queries
-            inputPorts = inputContainer.Query<Port>().Build();
-            outputPorts = outputContainer.Query<Port>().Build();
+            // inputPorts = inputContainer.Query<Port>().Build();
+            // outputPorts = outputContainer.Query<Port>().Build();
         }
 
-        public override void OnSelected()
+        public Label titleLabel { get; }
+        public VisualElement mainContainer { get; }
+        public VisualElement titleContainer { get; }
+        public VisualElement topContainer { get; }
+        public VisualElement inputContainer { get; }
+        public VisualElement outputContainer { get; }
+        public VisualElement extensionContainer { get; }
+
+        public override string Title
         {
-            base.OnSelected();
-            AddToClassList("node-selected");
+            get => titleLabel != null ? titleLabel.text : string.Empty;
+            set
+            {
+                if (titleLabel != null) { titleLabel.text = value; }
+            }
         }
 
-        public override void OnUnselected()
+        public override bool Selected
         {
-            base.OnUnselected();
-            RemoveFromClassList("node-selected");
+            get => base.Selected;
+            set
+            {
+                if (base.Selected == value) { return; }
+                base.Selected = value;
+                if (value) { AddToClassList("node-selected"); }
+                else { RemoveFromClassList("node-selected"); }
+            }
         }
+
+        public virtual Port InstantiatePort(Orientation orientation, Direction direction, Port.PortCapacity capacity) =>
+            Port.Create<Edge>(this, orientation, direction, capacity);
+
+        // public virtual void CollectElements(HashSet<GraphElement> collectedElementSet,
+        //     Func<GraphElement, bool> conditionFunc)
+        // {
+        //     CollectConnectedEdges(collectedElementSet);
+        // }
 
         // void AddConnectionsToDeleteSet(VisualElement container, ref HashSet<GraphElement> toDelete)
         // {
@@ -191,17 +158,64 @@ namespace GraphViewPlayer
         //     return DropdownMenuAction.Status.Disabled;
         // }
 
-        void CollectConnectedEdges(HashSet<GraphElement> edgeSet)
+        // private void CollectConnectedEdges(HashSet<GraphElement> edgeSet)
+        // {
+        //     edgeSet.UnionWith(inputPorts.SelectMany(c => c.connections)
+        //         .Where(d => (d.Capabilities & Capabilities.Deletable) != 0));
+        //     edgeSet.UnionWith(outputPorts.SelectMany(c => c.connections)
+        //         .Where(d => (d.Capabilities & Capabilities.Deletable) != 0));
+        // }
+
+        #region IDraggable
+        public void OnDragBegin(IDragBeginContext context)
         {
-            edgeSet.UnionWith(inputPorts.SelectMany(c => c.connections)
-                .Where(d => (d.capabilities & Capabilities.Deletable) != 0));
-            edgeSet.UnionWith(outputPorts.SelectMany(c => c.connections)
-                .Where(d => (d.capabilities & Capabilities.Deletable) != 0));
+            // Cancel checks 
+            if (context.IsCancelled()) { return; }
+            if (Graph == null || !IsMovable())
+            {
+                context.CancelDrag();
+                return;
+            }
+
+            // Track for panning
+            Graph.TrackElementForPan(this);
         }
 
-        public virtual void CollectElements(HashSet<GraphElement> collectedElementSet, Func<GraphElement, bool> conditionFunc)
+        public void OnDrag(IDragContext context)
         {
-            CollectConnectedEdges(collectedElementSet);
+            // Cancel checks 
+            if (context.IsCancelled()) { return; }
+            if (Graph == null || !IsMovable())
+            {
+                context.CancelDrag();
+                return;
+            }
+
+            // Handle drag
+            foreach (Node node in Graph.NodesSelected)
+            {
+                node.SetPosition(node.GetPosition() + context.MouseDelta / Graph.CurrentScale);
+                Graph.OnNodeMoved(node);
+            }
         }
+
+        public void OnDragEnd(IDragEndContext context)
+        {
+            // Untrack for panning
+            Graph.UntrackElementForPan(this);
+        }
+
+        public void OnDragCancel(IDragCancelContext context)
+        {
+            // Untrack for panning
+            Vector2 totalDiff = (context.MouseResetDelta - Graph.UntrackElementForPan(this, true)) / Graph.CurrentScale;
+
+            // Reset position
+            foreach (Node node in Graph.NodesSelected)
+            {
+                node.SetPosition(node.GetPosition() + totalDiff);
+            }
+        }
+        #endregion
     }
 }

@@ -11,8 +11,19 @@ using UnityEngine.UIElements;
 
 namespace GraphViewPlayer
 {
-    public abstract class GraphView : VisualElement, ISelection
+    public abstract class GraphView : VisualElement, ISelector
     {
+        private const int k_FrameBorder = 30;
+        private const int k_PanAreaWidth = 100;
+        private const int k_PanSpeed = 4;
+        private const int k_PanInterval = 10;
+        private const float k_MinSpeedFactor = 0.5f;
+        private const float k_MaxSpeedFactor = 2.5f;
+        private const float k_MaxPanSpeed = k_MaxSpeedFactor * k_PanSpeed;
+        private const float k_PanAreaWidthAndMinSpeedFactor = k_PanAreaWidth + k_MinSpeedFactor;
+
+        private readonly Dictionary<int, Layer> m_ContainerLayers;
+
         private static StyleSheet s_DefaultStyle;
         private static StyleSheet DefaultStyle
         {
@@ -25,61 +36,7 @@ namespace GraphViewPlayer
                 return s_DefaultStyle;
             }
         }
-
-        // Layer class. Used for queries below.
-        public class Layer : VisualElement {}
-
-        // Delegates and Callbacks
-        internal delegate void ViewTransformChanged(GraphView graphView);
-        internal ViewTransformChanged viewTransformChanged { get; set; }
-
-        class ContentViewContainer : VisualElement
-        {
-            public override bool Overlaps(Rect r)
-            {
-                return true;
-            }
-        }
-
-        VisualElement graphViewContainer { get; }
-        public VisualElement contentViewContainer { get; private set; }
-
-        public ITransform viewTransform
-        {
-            get { return contentViewContainer.transform; }
-        }
-
-        public void UpdateViewTransform(Vector3 newPosition)
-            => UpdateViewTransform(newPosition, viewTransform.scale);
-        public void UpdateViewTransform(Vector3 newPosition, Vector3 newScale)
-        {
-            float validateFloat = newPosition.x + newPosition.y + newPosition.z + newScale.x + newScale.y + newScale.z;
-            if (float.IsInfinity(validateFloat) || float.IsNaN(validateFloat))
-                return;
-
-            contentViewContainer.transform.position = newPosition;
-            contentViewContainer.transform.scale = newScale;
-
-            viewTransformChanged?.Invoke(this);
-            OnViewportChanged();
-        }
-
-        public enum FrameType
-        {
-            All = 0,
-            Selection = 1,
-            Origin = 2
-        }
-
-        readonly int k_FrameBorder = 30;
-
-        private readonly Dictionary<int, Layer> m_ContainerLayers;
-
-        public override VisualElement contentContainer // Contains full content, potentially partially visible
-        {
-            get { return graphViewContainer; }
-        }
-
+        
         #region Constructor
         protected GraphView()
         {
@@ -94,27 +51,32 @@ namespace GraphViewPlayer
             usageHints = UsageHints.MaskContainer; // Should equate to RenderHints.ClipWithScissors
 
             // Manipulators
-            m_Zoomer = new ContentZoomer();
+            m_Zoomer = new();
             this.AddManipulator(m_Zoomer);
-            this.AddManipulator(new ContentDragger());
-            this.AddManipulator(new RectangleSelector());
-            this.AddManipulator(new SelectionDragger());
+            this.AddManipulator(new DragAndDropManipulator());
+
+            // this.AddManipulator(new ContentDragger());
+            // this.AddManipulator(new RectangleSelector());
+            // this.AddManipulator(new DragAndDropManipulator());
+            // this.AddManipulator(new SelectionDragger());
+            // this.AddManipulator(new DragAndDropManipulator());
 
             //
-            // Grid Background - Level 1
-            //
-            hierarchy.Insert(0, new GridBackground());
-
-            //
-            // Graph View Container - Level 1
+            // Graph View Container & Grid - Level 1
             //
             // Root Container
-            graphViewContainer = new() { pickingMode = PickingMode.Ignore };
-            graphViewContainer.AddToClassList("graph-view-container");
+            graphViewContainer = new GridBackground();
             hierarchy.Add(graphViewContainer);
 
             //
-            // Content Container - Level 3
+            // Rectangular Selection and Droppable Backstop
+            //
+            backstop = new(this);
+            // backstop.AddManipulator(new RectangleSelector());
+            graphViewContainer.Add(backstop);
+
+            //
+            // Content Container - Level 2
             //
             // Content Container
             contentViewContainer = new ContentViewContainer
@@ -129,225 +91,298 @@ namespace GraphViewPlayer
             // Other Initialization
             //
             // Cached Queries
-            graphElements = contentViewContainer.Query<GraphElement>().Build();
-            nodes = contentViewContainer.Query<Node>().Build();
-            edges = this.Query<Layer>().Children<Edge>().Build();
-            ports = contentViewContainer.Query().Children<Layer>().Descendents<Port>().Build();
+            ElementsAll = contentViewContainer.Query<GraphElement>().Build();
+            ElementsSelected = contentViewContainer.Query<GraphElement>().Where(WhereSelected).Build();
+            ElementsUnselected = contentViewContainer.Query<GraphElement>().Where(WhereUnselected).Build();
 
-            // Selection
-            selection = new List<ISelectable>();
+            Nodes = contentViewContainer.Query<Node>().Build();
+            NodesSelected = contentViewContainer.Query<Node>().Where(WhereSelected).Build();
+            Edges = this.Query<Layer>().Children<BaseEdge>().Build();
+            EdgesSelected = this.Query<Layer>().Children<BaseEdge>().Where(WhereSelected).Build();
+            Ports = contentViewContainer.Query().Children<Layer>().Descendents<Port>().Build();
 
             // Layers
             m_ContainerLayers = new();
+
+            // Panning
+            m_PanSchedule = schedule
+                .Execute(Pan)
+                .Every(k_PanInterval)
+                .StartingIn(k_PanInterval);
+            m_PanSchedule.Pause();
 
             // Focus
             focusable = true;
         }
         #endregion
 
-        #region Layers
-        void AddLayer(Layer layer, int index)
+        internal ViewTransformChanged OnViewTransformChanged { get; set; }
+
+        private Backstop backstop { get; }
+        private VisualElement graphViewContainer { get; }
+        public VisualElement contentViewContainer { get; }
+
+        public ITransform viewTransform => contentViewContainer.transform;
+
+        public UQueryState<Node> Nodes { get; }
+        public UQueryState<Node> NodesSelected { get; }
+        public UQueryState<Port> Ports { get; }
+        public UQueryState<BaseEdge> Edges { get; }
+        public UQueryState<BaseEdge> EdgesSelected { get; }
+        public UQueryState<GraphElement> ElementsAll { get; }
+        public UQueryState<GraphElement> ElementsSelected { get; }
+        public UQueryState<GraphElement> ElementsUnselected { get; }
+        
+        #region Edges
+        public delegate BaseEdge EdgeFactory();
+        public EdgeFactory CreateEdge { get; set; } = CreateDefaultEdge;
+        private static BaseEdge CreateDefaultEdge() => new Edge();
+        #endregion
+
+        #region View Transform
+        internal delegate void ViewTransformChanged(GraphView graphView);
+        public void UpdateViewTransform(Vector3 newPosition)
+            => UpdateViewTransform(newPosition, viewTransform.scale);
+        public void UpdateViewTransform(Vector3 newPosition, Vector3 newScale)
         {
-            m_ContainerLayers.Add(index, layer);
+            float validateFloat = newPosition.x + newPosition.y + newPosition.z + newScale.x + newScale.y + newScale.z;
+            if (float.IsInfinity(validateFloat) || float.IsNaN(validateFloat)) { return; }
 
-            int indexOfLayer = m_ContainerLayers.OrderBy(t => t.Key).Select(t => t.Value).ToList().IndexOf(layer);
+            viewTransform.scale = newScale;
+            viewTransform.position = newPosition;
 
-            contentViewContainer.Insert(indexOfLayer, layer);
-        }
-
-        public void AddLayer(int index)
-        {
-            Layer newLayer = new Layer { name = $"Layer {index}", pickingMode = PickingMode.Ignore };
-
-            m_ContainerLayers.Add(index, newLayer);
-
-            int indexOfLayer = m_ContainerLayers.OrderBy(t => t.Key).Select(t => t.Value).ToList().IndexOf(newLayer);
-
-            contentViewContainer.Insert(indexOfLayer, newLayer);
-        }
-
-        VisualElement GetLayer(int index)
-        {
-            return m_ContainerLayers[index];
-        }
-
-        internal void ChangeLayer(GraphElement element)
-        {
-            if (!m_ContainerLayers.ContainsKey(element.layer))
-                AddLayer(element.layer);
-
-            bool selected = element.selected;
-            if (selected)
-                element.UnregisterCallback<DetachFromPanelEvent>(OnSelectedElementDetachedFromPanel);
-
-            GetLayer(element.layer).Add(element);
-
-            if (selected)
-                element.RegisterCallback<DetachFromPanelEvent>(OnSelectedElementDetachedFromPanel);
+            OnViewTransformChanged?.Invoke(this);
+            OnViewportChanged();
         }
         #endregion
 
-        public UQueryState<GraphElement> graphElements { get; private set; }
-        public UQueryState<Node> nodes { get; private set; }
-        public UQueryState<Port> ports { get; private set; }
-        public UQueryState<Edge> edges { get; private set; }
+        #region Pan
+        private GraphElement m_PanElement;
+        private Vector2 m_PanOriginDiff;
+        private bool m_PanElementIsNode;
+        private readonly IVisualElementScheduledItem m_PanSchedule;
+
+        internal void TrackElementForPan(GraphElement element)
+        {
+            m_PanOriginDiff = Vector2.zero;
+            m_PanElement = element;
+            m_PanElementIsNode = element is Node;
+            m_PanSchedule.Resume();
+        }
+
+        internal Vector2 UntrackElementForPan(GraphElement element, bool resetView = false)
+        {
+            if (element == m_PanElement)
+            {
+                m_PanSchedule.Pause();
+                m_PanElement = null;
+                if (resetView) UpdateViewTransform((Vector2)viewTransform.position + m_PanOriginDiff);
+                return m_PanOriginDiff;
+            }
+            return Vector2.zero;
+        }
+
+        private Vector2 GetEffectivePanSpeed(Vector2 mousePos)
+        {
+            Vector2 effectiveSpeed = Vector2.zero;
+
+            if (mousePos.x <= k_PanAreaWidth)
+            {
+                effectiveSpeed.x = -((k_PanAreaWidth - mousePos.x) / k_PanAreaWidthAndMinSpeedFactor) * k_PanSpeed;
+            }
+            else if (mousePos.x >= graphViewContainer.layout.width - k_PanAreaWidth)
+            {
+                effectiveSpeed.x = (mousePos.x - (graphViewContainer.layout.width - k_PanAreaWidth))
+                    / k_PanAreaWidthAndMinSpeedFactor * k_PanSpeed;
+            }
+
+            if (mousePos.y <= k_PanAreaWidth)
+            {
+                effectiveSpeed.y = -((k_PanAreaWidth - mousePos.y) / k_PanAreaWidthAndMinSpeedFactor) * k_PanSpeed;
+            }
+            else if (mousePos.y >= graphViewContainer.layout.height - k_PanAreaWidth)
+            {
+                effectiveSpeed.y = (mousePos.y - (graphViewContainer.layout.height - k_PanAreaWidth))
+                    / k_PanAreaWidthAndMinSpeedFactor * k_PanSpeed;
+            }
+
+            return Vector2.ClampMagnitude(effectiveSpeed, k_MaxPanSpeed);
+        }
+
+        private void Pan()
+        {
+            // Use element center as the point to test against the bounds of the pan area
+            Vector2 elementPositionWorld = m_PanElement.GetGlobalCenter();
+
+            // If the point has entered the bounds of the pan area, calculate how fast we want to pan
+            Vector2 speed = GetEffectivePanSpeed(elementPositionWorld);
+            if (Vector2.zero == speed) { return; }
+
+            // Record changes in pan
+            m_PanOriginDiff += speed;
+
+            // Update the view transform (to pan)
+            UpdateViewTransform((Vector2)viewTransform.position - speed);
+
+            // Speed is scaled according to the current zoom level
+            Vector2 localSpeed = speed / CurrentScale; 
+
+            // Set position
+            if (m_PanElementIsNode)
+            {
+                // Nodes
+                foreach (Node selectedNode in NodesSelected)
+                {
+                    selectedNode.SetPosition(selectedNode.GetPosition() + localSpeed);
+                }
+            }
+            else
+            {
+                // Edges
+                BaseEdge edge = (BaseEdge)m_PanElement;
+                if (edge.IsInputPositionOverriden())
+                {
+                    edge.SetInputPositionOverride(edge.GetInputPositionOverride() + localSpeed);
+                }
+                else { edge.SetOutputPositionOverride(edge.GetOutputPositionOverride() + localSpeed); }
+            }
+        }
+        #endregion
+
+        #region Layers
+        internal void ChangeLayer(GraphElement element) { GetLayer(element.Layer).Add(element); }
+
+        private VisualElement GetLayer(int index)
+        {
+            if (!m_ContainerLayers.TryGetValue(index, out Layer layer))
+            {
+                layer = new() { name = $"Layer {index}" };
+                m_ContainerLayers[index] = layer;
+
+                // TODO
+                int indexOfLayer = m_ContainerLayers.OrderBy(t => t.Key).Select(t => t.Value).ToList().IndexOf(layer);
+                contentViewContainer.Insert(indexOfLayer, layer);
+            }
+            return layer;
+        }
+        #endregion
 
         #region Zoom
-        private ContentZoomer m_Zoomer;
+        private readonly ZoomManipulator m_Zoomer;
 
-        public float minScale
+        public float MinScale
         {
             get => m_Zoomer.minScale;
             set
             {
-                m_Zoomer.minScale = Math.Min(value, ContentZoomer.DefaultMinScale);
+                m_Zoomer.minScale = Math.Min(value, ZoomManipulator.DefaultMinScale);
                 ValidateTransform();
             }
         }
 
-        public float maxScale
+        public float MaxScale
         {
             get => m_Zoomer.maxScale;
             set
             {
-                m_Zoomer.maxScale = Math.Max(value, ContentZoomer.DefaultMaxScale);
+                m_Zoomer.maxScale = Math.Max(value, ZoomManipulator.DefaultMaxScale);
                 ValidateTransform();
             }
         }
 
-        public float scaleStep
+        public float ScaleStep
         {
             get => m_Zoomer.scaleStep;
             set
             {
-                m_Zoomer.scaleStep = Math.Min(value, (maxScale - minScale) / 2);
+                m_Zoomer.scaleStep = Math.Min(value, (MaxScale - MinScale) / 2);
                 ValidateTransform();
             }
         }
 
-        public float referenceScale
+        public float ReferenceScale
         {
             get => m_Zoomer.referenceScale;
             set
             {
-                m_Zoomer.referenceScale = Math.Clamp(value, minScale, maxScale);
+                m_Zoomer.referenceScale = Math.Clamp(value, MinScale, MaxScale);
                 ValidateTransform();
             }
         }
 
-        public float scale
-        {
-            get { return viewTransform.scale.x; }
-        }
+        public float CurrentScale => viewTransform.scale.x;
 
         protected void ValidateTransform()
         {
-            if (contentViewContainer == null)
-                return;
+            if (contentViewContainer == null) { return; }
             Vector3 transformScale = viewTransform.scale;
 
-            transformScale.x = Mathf.Clamp(transformScale.x, minScale, maxScale);
-            transformScale.y = Mathf.Clamp(transformScale.y, minScale, maxScale);
+            transformScale.x = Mathf.Clamp(transformScale.x, MinScale, MaxScale);
+            transformScale.y = Mathf.Clamp(transformScale.y, MinScale, MaxScale);
 
             UpdateViewTransform(viewTransform.position, transformScale);
         }
         #endregion
 
         #region Selection
-        // ISelection implementation
-        public List<ISelectable> selection { get; protected set; }
-
-        // functions to ISelection extensions
-        public virtual void AddToSelection(ISelectable selectable)
+        public void SelectAll()
         {
-            var graphElement = selectable as GraphElement;
-            if (graphElement == null)
-                return;
-
-            if (selection.Contains(selectable))
-                return;
-
-            AddToSelectionNoUndoRecord(graphElement);
+            foreach (GraphElement ge in ElementsAll) { ge.Selected = true; }
         }
 
-        private void AddToSelectionNoUndoRecord(GraphElement graphElement)
+        public void ClearSelection()
         {
-            graphElement.selected = true;
-            selection.Add(graphElement);
-            graphElement.OnSelected();
-
-            // To ensure that the selected GraphElement gets unselected if it is removed from the GraphView.
-            graphElement.RegisterCallback<DetachFromPanelEvent>(OnSelectedElementDetachedFromPanel);
-
-            graphElement.MarkDirtyRepaint();
+            foreach (GraphElement ge in ElementsAll) { ge.Selected = false; }
         }
 
-        private void RemoveFromSelectionNoUndoRecord(ISelectable selectable)
+        public void CollectAll(List<ISelectable> toPopulate)
         {
-            var graphElement = selectable as GraphElement;
-            if (graphElement == null)
-                return;
-            graphElement.selected = false;
-
-            selection.Remove(selectable);
-            graphElement.OnUnselected();
-            graphElement.UnregisterCallback<DetachFromPanelEvent>(OnSelectedElementDetachedFromPanel);
-            graphElement.MarkDirtyRepaint();
+            foreach (GraphElement ge in ElementsAll) { toPopulate.Add(ge); }
         }
 
-        public virtual void RemoveFromSelection(ISelectable selectable)
+        public void CollectSelected(List<ISelectable> toPopulate)
         {
-            var graphElement = selectable as GraphElement;
-            if (graphElement == null)
-                return;
-
-            if (!selection.Contains(selectable))
-                return;
-
-            RemoveFromSelectionNoUndoRecord(selectable);
-        }
-
-        private bool ClearSelectionNoUndoRecord()
-        {
-            foreach (var graphElement in selection.OfType<GraphElement>())
+            foreach (GraphElement ge in ElementsAll)
             {
-                graphElement.selected = false;
-
-                graphElement.OnUnselected();
-                graphElement.UnregisterCallback<DetachFromPanelEvent>(OnSelectedElementDetachedFromPanel);
-                graphElement.MarkDirtyRepaint();
+                if (ge.Selected) { toPopulate.Add(ge); }
             }
-
-            bool selectionWasNotEmpty = selection.Any();
-            selection.Clear();
-
-            return selectionWasNotEmpty;
         }
 
-        public virtual void ClearSelection()
+        public void CollectUnselected(List<ISelectable> toPopulate)
         {
-            ClearSelectionNoUndoRecord();
+            foreach (GraphElement ge in ElementsAll)
+            {
+                if (!ge.Selected) { toPopulate.Add(ge); }
+            }
         }
 
-        private void OnSelectedElementDetachedFromPanel(DetachFromPanelEvent evt)
-        {
-            RemoveFromSelectionNoUndoRecord(evt.target as ISelectable);
-        }
+        public void ForEachAll(Action<ISelectable> action) { ElementsAll.ForEach(action); }
+        public void ForEachSelected(Action<ISelectable> action) { ElementsSelected.ForEach(action); }
+        public void ForEachUnselected(Action<ISelectable> action) { ElementsUnselected.ForEach(action); }
+
+        private bool WhereSelected(ISelectable selectable) => selectable.Selected;
+        private bool WhereUnselected(ISelectable selectable) => !selectable.Selected;
         #endregion
 
         #region Keybinding
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private static bool IsUnmodified(EventModifiers modifiers) => modifiers == EventModifiers.None;
+
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private static bool IsCommand(EventModifiers modifiers) => (modifiers & EventModifiers.Command) != 0;
+
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private static bool IsShift(EventModifiers modifiers) => modifiers == EventModifiers.Shift;
+
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private static bool IsFunction(EventModifiers modifiers) => (modifiers & EventModifiers.FunctionKey) != 0;
+
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private static bool IsCommandExclusive(EventModifiers modifiers) => modifiers == EventModifiers.Command;
+
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private static bool IsControlExclusive(EventModifiers modifiers) => modifiers == EventModifiers.Control;
+
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private static bool IsMac()
             => Application.platform == RuntimePlatform.OSXEditor || Application.platform == RuntimePlatform.OSXPlayer;
@@ -355,8 +390,8 @@ namespace GraphViewPlayer
         [EventInterest(typeof(KeyDownEvent))]
         protected override void ExecuteDefaultAction(EventBase baseEvent)
         {
-            if (baseEvent is not KeyDownEvent evt) return;
-            if (panel.GetCapturingElement(PointerId.mousePointerId) != null)  return;
+            if (baseEvent is not KeyDownEvent evt) { return; }
+            if (panel.GetCapturingElement(PointerId.mousePointerId) != null) { return; }
 
             // Check for CMD or CTRL
             switch (evt.keyCode)
@@ -491,7 +526,7 @@ namespace GraphViewPlayer
                 case KeyCode.F:
                     if (IsUnmodified(evt.modifiers))
                     {
-                        Frame(FrameType.Selection);
+                        Frame();
                         evt.StopPropagation();
                     }
                     break;
@@ -499,154 +534,94 @@ namespace GraphViewPlayer
         }
         #endregion
 
-        // public static void CollectElements(IEnumerable<GraphElement> elements, HashSet<GraphElement> collectedElementSet, Func<GraphElement, bool> conditionFunc)
-        // {
-        //     foreach (var element in elements.Where(e => e != null && !collectedElementSet.Contains(e) && conditionFunc(e)))
-        //     {
-        //         var collectibleElement = element as ICollectibleElement;
-        //         collectibleElement?.CollectElements(collectedElementSet, conditionFunc);
-        //         collectedElementSet.Add(element);
-        //     }
-        // }
-
-        // protected internal virtual void CollectCopyableGraphElements(IEnumerable<GraphElement> elements, HashSet<GraphElement> elementsToCopySet)
-        // {
-        //     CollectElements(elements, elementsToCopySet, e => e.IsCopiable());
-        // }
-
-        public virtual void GetCompatiblePorts(ICollection<Port> toPopulate, Port startPort)
-        {
-            foreach (Port endPort in ports)
-            {
-                if (startPort.direction != endPort.direction // Input to output only 
-                    && startPort.node != endPort.node // Can't connect to self 
-                    && endPort.CanConnectToMore() // Has capacity 
-                    && !startPort.IsConnectedTo(endPort) // Not already connected
-                )
-                {
-                    toPopulate.Add(endPort);
-                }
-            }
-        }
-
         #region Add / Remove Elements from Heirarchy
         public void AddElement(GraphElement graphElement)
         {
-            int newLayer = graphElement.layer;
-            if (!m_ContainerLayers.ContainsKey(newLayer))
-            {
-                AddLayer(newLayer);
-            }
-            GetLayer(newLayer).Add(graphElement);
+            graphElement.Graph = this;
+            GetLayer(graphElement.Layer).Add(graphElement);
         }
 
         public void RemoveElement(GraphElement graphElement)
         {
+            UntrackElementForPan(graphElement); // Stop panning if we were panning
             graphElement.RemoveFromHierarchy();
+            graphElement.Graph = null;
         }
-
-        // private void CollectDeletableGraphElements(IEnumerable<GraphElement> elements, HashSet<GraphElement> elementsToRemoveSet)
-        // {
-        //     CollectElements(elements, elementsToRemoveSet, e => (e.capabilities & Capabilities.Deletable) == Capabilities.Deletable);
-        // }
-
-        // public virtual void DeleteSelection()
-        // {
-        //     var elementsToRemoveSet = new HashSet<GraphElement>();
-        //
-        //     CollectDeletableGraphElements(selection.OfType<GraphElement>(), elementsToRemoveSet);
-        //
-        //     DeleteElements(elementsToRemoveSet);
-        //
-        //     selection.Clear();
-        // }
-
-        public void ConnectPorts(Port input, Port output)
-        {
-            AddElement(input.ConnectTo(output));
-        }
+        #endregion
+        
+        #region Ports
+        public void ConnectPorts(Port input, Port output) { AddElement(input.ConnectTo(output)); }
         #endregion
 
         #region Framing
-        protected void Frame(FrameType frameType)
+        protected void Frame()
         {
-            Rect rectToFit = contentViewContainer.layout;
-            Vector3 frameTranslation = Vector3.zero;
-            Vector3 frameScaling = Vector3.one;
-
-            if (frameType == FrameType.Selection &&
-                (selection.Count == 0 || !selection.Any(e => e.IsSelectable() && !(e is Edge))))
-                frameType = FrameType.All;
-
-            if (frameType == FrameType.Selection)
+            // Construct rect for selected and unselected elements
+            Rect rectToFitSelected = contentViewContainer.layout;
+            Rect rectToFitUnselected = rectToFitSelected;
+            bool reachedFirstSelected = false;
+            bool reachedFirstUnselected = false;
+            foreach (GraphElement ge in ElementsAll)
             {
-                rectToFit = CalculateRectToFitSelection(contentViewContainer);
-            }
-            else if (frameType == FrameType.All)
-            {
-                rectToFit = CalculateRectToFitAll(contentViewContainer);
+                // TODO: edge control is the VisualElement with actual dimensions
+                // VisualElement ve = ge is BaseEdge edge ? edge.EdgeControl : ge;
+                if (ge.Selected)
+                {
+                    if (!reachedFirstSelected)
+                    {
+                        rectToFitSelected = ge.ChangeCoordinatesTo(contentViewContainer, ge.Rect());
+                        reachedFirstSelected = true;
+                    }
+                    else
+                    {
+                        rectToFitSelected = RectUtils.Encompass(rectToFitSelected,
+                            ge.ChangeCoordinatesTo(contentViewContainer, ge.Rect()));
+                    }
+                }
+                else if (!reachedFirstSelected) // Don't bother if we already have at least one selected item
+                {
+                    if (!reachedFirstUnselected)
+                    {
+                        rectToFitUnselected = ge.ChangeCoordinatesTo(contentViewContainer, ge.Rect());
+                        reachedFirstUnselected = true;
+                    }
+                    else
+                    {
+                        rectToFitUnselected = RectUtils.Encompass(rectToFitUnselected,
+                            ge.ChangeCoordinatesTo(contentViewContainer, ge.Rect()));
+                    }
+                }
             }
 
-            CalculateFrameTransform(rectToFit, layout, k_FrameBorder, out frameTranslation, out frameScaling);
+            // Use selection only if possible, otherwise unselected. Failing both, use original content container rect
+            Vector3 frameScaling;
+            Vector3 frameTranslation;
+            if (reachedFirstSelected)
+            {
+                CalculateFrameTransform(rectToFitSelected, layout, k_FrameBorder, out frameTranslation,
+                    out frameScaling);
+            }
+            else if (reachedFirstUnselected)
+            {
+                CalculateFrameTransform(rectToFitUnselected, layout, k_FrameBorder, out frameTranslation,
+                    out frameScaling);
+            }
+            else
+            {
+                // Note: rectToFitSelected will just be the container rect
+                CalculateFrameTransform(rectToFitSelected, layout, k_FrameBorder, out frameTranslation,
+                    out frameScaling);
+            }
+
+            // Update transform
             Matrix4x4.TRS(frameTranslation, Quaternion.identity, frameScaling);
             UpdateViewTransform(frameTranslation, frameScaling);
-            contentViewContainer.MarkDirtyRepaint();
-        }
-
-        public virtual Rect CalculateRectToFitSelection(VisualElement container)
-        {
-            Rect rectToFit = container.layout;
-            VisualElement graphElement = selection[0] as GraphElement;
-            if (graphElement != null)
-            {
-                // Edges don't have a size. Only their internal EdgeControl have a size.
-                if (graphElement is Edge)
-                    graphElement = (graphElement as Edge).edgeControl;
-                rectToFit = graphElement.ChangeCoordinatesTo(contentViewContainer, graphElement.Rect());
-            }
-
-            rectToFit = selection.Cast<GraphElement>()
-                .Aggregate(rectToFit, (current, currentGraphElement) =>
-                {
-                    VisualElement currentElement = currentGraphElement;
-                    if (currentGraphElement is Edge)
-                        currentElement = (currentGraphElement as Edge).edgeControl;
-                    return RectUtils.Encompass(current, currentElement.ChangeCoordinatesTo(contentViewContainer, currentElement.Rect()));
-                });
-
-            return rectToFit;
-        }
-
-        public virtual Rect CalculateRectToFitAll(VisualElement container)
-        {
-            Rect rectToFit = container.layout;
-            bool reachedFirstChild = false;
-
-            graphElements.ForEach(ge =>
-            {
-                if (ge is Edge)
-                {
-                    return;
-                }
-
-                if (!reachedFirstChild)
-                {
-                    rectToFit = ge.ChangeCoordinatesTo(contentViewContainer, ge.Rect());
-                    reachedFirstChild = true;
-                }
-                else
-                {
-                    rectToFit = RectUtils.Encompass(rectToFit, ge.ChangeCoordinatesTo(contentViewContainer, ge.Rect()));
-                }
-            });
-
-            return rectToFit;
         }
 
         private float ZoomRequiredToFrameRect(Rect rectToFit, Rect clientRect, int border)
         {
             // bring slightly smaller screen rect into GUI space
-            Rect screenRect = new Rect
+            Rect screenRect = new()
             {
                 xMin = border,
                 xMax = clientRect.width - border,
@@ -657,38 +632,40 @@ namespace GraphViewPlayer
             return Math.Min(identity.width / rectToFit.width, identity.height / rectToFit.height);
         }
 
-        public void CalculateFrameTransform(Rect rectToFit, Rect clientRect, int border, out Vector3 frameTranslation, out Vector3 frameScaling)
+        public void CalculateFrameTransform(Rect rectToFit, Rect clientRect, int border, out Vector3 frameTranslation,
+            out Vector3 frameScaling)
         {
-            Matrix4x4 m = GUI.matrix;
-            GUI.matrix = Matrix4x4.TRS(Vector3.zero, Quaternion.identity, Vector3.one);
+            // Matrix4x4 m = GUI.matrix;
+            // GUI.matrix = Matrix4x4.TRS(Vector3.zero, Quaternion.identity, Vector3.one);
 
             // measure zoom level necessary to fit the canvas rect into the screen rect
             float zoomLevel = ZoomRequiredToFrameRect(rectToFit, clientRect, border);
 
             // clamp
-            zoomLevel = Mathf.Clamp(zoomLevel, minScale, maxScale);
+            zoomLevel = Mathf.Clamp(zoomLevel, MinScale, MaxScale);
 
-            var transformMatrix = Matrix4x4.TRS(Vector3.zero, Quaternion.identity, new Vector3(zoomLevel, zoomLevel, 1.0f));
+            Matrix4x4 transformMatrix =
+                Matrix4x4.TRS(Vector3.zero, Quaternion.identity, new(zoomLevel, zoomLevel, 1.0f));
 
-            var edge = new Vector2(clientRect.width, clientRect.height);
-            var origin = new Vector2(0, 0);
+            Vector2 edge = new(clientRect.width, clientRect.height);
+            Vector2 origin = new(0, 0);
 
-            var r = new Rect
+            Rect r = new()
             {
                 min = origin,
                 max = edge
             };
 
-            var parentScale = new Vector3(transformMatrix.GetColumn(0).magnitude,
+            Vector3 parentScale = new(transformMatrix.GetColumn(0).magnitude,
                 transformMatrix.GetColumn(1).magnitude,
                 transformMatrix.GetColumn(2).magnitude);
-            Vector2 offset = r.center - (rectToFit.center * parentScale.x);
+            Vector2 offset = r.center - rectToFit.center * parentScale.x;
 
             // Update output values before leaving
-            frameTranslation = new Vector3(offset.x, offset.y, 0.0f);
+            frameTranslation = new(offset.x, offset.y, 0.0f);
             frameScaling = parentScale;
 
-            GUI.matrix = m;
+            // GUI.matrix = m;
         }
         #endregion
 
@@ -700,10 +677,46 @@ namespace GraphViewPlayer
         protected internal abstract void OnDelete();
         protected internal abstract void OnUndo();
         protected internal abstract void OnRedo();
-        protected internal abstract void OnEdgeCreate(Edge edge);
-        protected internal abstract void OnEdgeDelete(Edge edge);
-        protected internal abstract void OnElementMoved(GraphElement element);
+        protected internal abstract void OnEdgeCreate(BaseEdge edge);
+        protected internal abstract void OnEdgeDelete(BaseEdge edge);
+        protected internal abstract void OnNodeMoved(Node node);
         protected internal abstract void OnViewportChanged();
+        #endregion
+
+        #region Helper Classes
+        public class Layer : VisualElement
+        {
+            public Layer() => pickingMode = PickingMode.Ignore;
+        }
+
+        private class Backstop : VisualElement, IDroppable
+        {
+            private GraphView m_GraphView; 
+
+            internal Backstop(GraphView graphView)
+            {
+                AddToClassList("backstop");
+                m_GraphView = graphView;
+            }
+
+            public void OnDropEnter(IDropEnterContext context) {  }
+            public void OnDrop(IDropContext context)
+            {
+                if (context.Draggable is BaseEdge edge)
+                {
+                    // Delete real edge
+                    if (edge.IsRealEdge()) m_GraphView.OnEdgeDelete(edge);
+                    // Delete candidate edge
+                    else m_GraphView.RemoveElement(edge);
+                } 
+            }
+            public void OnDropExit(IDropExitContext context) {  }
+        }
+
+        private class ContentViewContainer : VisualElement
+        {
+            public override bool Overlaps(Rect r) => true;
+        }
         #endregion
     }
 

@@ -3,7 +3,6 @@
 // https://unity3d.com/legal/licenses/Unity_Reference_Only_License
 
 using System;
-using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UIElements;
 
@@ -14,27 +13,28 @@ namespace GraphViewPlayer
         private readonly RectangleSelect m_Rectangle;
         private bool m_Active;
         private GraphView m_GraphView;
-        private List<ISelectable> m_NewSelection;
 
         public RectangleSelector()
         {
-            activators.Add(new ManipulatorActivationFilter { button = MouseButton.LeftMouse });
-            if (Application.platform == RuntimePlatform.OSXEditor || Application.platform == RuntimePlatform.OSXPlayer)
+            activators.Add(new() { button = MouseButton.LeftMouse });
+            activators.Add(new() { button = MouseButton.LeftMouse, modifiers = EventModifiers.Shift });
+            activators.Add(new()
             {
-                activators.Add(new ManipulatorActivationFilter { button = MouseButton.LeftMouse, modifiers = EventModifiers.Command });
-            }
-            else
+                button = MouseButton.LeftMouse,
+                modifiers = PlatformUtils.IsMac ? EventModifiers.Command : EventModifiers.Control
+            });
+            m_Rectangle = new()
             {
-                activators.Add(new ManipulatorActivationFilter { button = MouseButton.LeftMouse, modifiers = EventModifiers.Control });
-            }
-            m_Rectangle = new RectangleSelect();
-            m_Rectangle.style.position = Position.Absolute;
-            m_Rectangle.style.top = 0f;
-            m_Rectangle.style.left = 0f;
-            m_Rectangle.style.bottom = 0f;
-            m_Rectangle.style.right = 0f;
+                style =
+                {
+                    position = Position.Absolute,
+                    top = 0f,
+                    left = 0f,
+                    bottom = 0f,
+                    right = 0f
+                }
+            };
             m_Active = false;
-            m_NewSelection = new();
         }
 
         // get the axis aligned bound
@@ -42,17 +42,12 @@ namespace GraphViewPlayer
         {
             Vector3 min = transform.MultiplyPoint3x4(position.min);
             Vector3 max = transform.MultiplyPoint3x4(position.max);
-            return Rect.MinMaxRect(Math.Min(min.x, max.x), Math.Min(min.y, max.y), Math.Max(min.x, max.x), Math.Max(min.y, max.y));
+            return Rect.MinMaxRect(Math.Min(min.x, max.x), Math.Min(min.y, max.y), Math.Max(min.x, max.x),
+                Math.Max(min.y, max.y));
         }
 
         protected override void RegisterCallbacksOnTarget()
         {
-            var graphView = target as GraphView;
-            if (graphView == null)
-            {
-                throw new InvalidOperationException("Manipulator can only be added to a GraphView");
-            }
-
             target.RegisterCallback<MouseDownEvent>(OnMouseDown);
             target.RegisterCallback<MouseUpEvent>(OnMouseUp);
             target.RegisterCallback<MouseMoveEvent>(OnMouseMove);
@@ -67,7 +62,7 @@ namespace GraphViewPlayer
             target.UnregisterCallback<MouseCaptureOutEvent>(OnMouseCaptureOutEvent);
         }
 
-        void OnMouseCaptureOutEvent(MouseCaptureOutEvent e)
+        private void OnMouseCaptureOutEvent(MouseCaptureOutEvent e)
         {
             if (m_Active)
             {
@@ -86,24 +81,24 @@ namespace GraphViewPlayer
             }
 
             // Not an event we care about
-            if (!CanStartManipulation(e)) return;
+            if (!CanStartManipulation(e)) { return; }
 
             // Target is not a RUIGraphView
-            m_GraphView = base.target as GraphView;
-            if (m_GraphView == null) return;
+            m_GraphView = target.GetFirstAncestorOfType<GraphView>();
+            if (m_GraphView == null) { return; }
 
-            // Don't start marquee unless the click started on the GraphView
-            if (e.target is not GraphView) return;
-
-            // Clear selection unless this was an action key + click
-            if (!e.actionKey) m_GraphView.ClearSelection();
+            // Clear selection if this is an exclusive select 
+            bool additive = e.shiftKey;
+            bool subtractive = e.actionKey;
+            bool exclusive = !(additive ^ subtractive);
+            if (exclusive) { m_GraphView.ClearSelection(); }
 
             // Add marquee
             m_GraphView.Add(m_Rectangle);
-            m_Rectangle.coordinates = new()
+            m_Rectangle.Coordinates = new()
             {
                 start = e.localMousePosition,
-                end = e.localMousePosition,
+                end = e.localMousePosition
             };
             m_Active = true;
             target.CaptureMouse();
@@ -112,51 +107,39 @@ namespace GraphViewPlayer
 
         private void OnMouseUp(MouseUpEvent e)
         {
-            if (!m_Active)
-                return;
+            if (!m_Active) { return; }
 
-            var graphView = target as GraphView;
-            if (graphView == null)
-                return;
+            if (!CanStopManipulation(e)) { return; }
 
-            if (!CanStopManipulation(e))
-                return;
+            m_GraphView.Remove(m_Rectangle);
 
-            graphView.Remove(m_Rectangle);
+            m_Rectangle.End = e.localMousePosition;
 
-            m_Rectangle.end = e.localMousePosition;
-
-            var selectionRect = new Rect()
+            // Ignore if the rectangle is infinitely small
+            Rect selectionRect = m_Rectangle.SelectionRect;
+            if (selectionRect.width != 0 || selectionRect.height != 0)
             {
-                min = new Vector2(Math.Min(m_Rectangle.start.x, m_Rectangle.end.x), Math.Min(m_Rectangle.start.y, m_Rectangle.end.y)),
-                max = new Vector2(Math.Max(m_Rectangle.start.x, m_Rectangle.end.x), Math.Max(m_Rectangle.start.y, m_Rectangle.end.y))
-            };
+                selectionRect = ComputeAxisAlignedBound(selectionRect, m_GraphView.viewTransform.matrix.inverse);
 
-            selectionRect = ComputeAxisAlignedBound(selectionRect, graphView.viewTransform.matrix.inverse);
-
-            List<ISelectable> selection = graphView.selection;
-
-            // a copy is necessary because AddToSelection might cause a SendElementToFront which will change the order.
-            graphView.graphElements.ForEach(child =>
-            {
-                var localSelRect = graphView.contentViewContainer.ChangeCoordinatesTo(child, selectionRect);
-                if (child.IsSelectable() && child.Overlaps(localSelRect))
+                bool additive = e.shiftKey;
+                bool subtractive = e.actionKey;
+                bool exclusive = !(additive ^ subtractive);
+                foreach (GraphElement element in m_GraphView.ElementsAll)
                 {
-                    m_NewSelection.Add(child);
+                    Rect localSelRect = m_GraphView.contentViewContainer.ChangeCoordinatesTo(element, selectionRect);
+                    if (element.Overlaps(localSelRect))
+                    {
+                        Debug.Log($"Seleted {exclusive || additive}");
+                        element.Selected = exclusive || additive;
+                    }
+                    else if (exclusive)
+                    {
+                        Debug.Log("Seleted false");
+                        element.Selected = false;
+                    }
                 }
-            });
-
-            foreach (var selectable in m_NewSelection)
-            {
-                if (selection.Contains(selectable))
-                {
-                    if (e.actionKey) // invert selection on shift only
-                        graphView.RemoveFromSelection(selectable);
-                }
-                else
-                    graphView.AddToSelection(selectable);
             }
-            m_NewSelection.Clear();
+
             m_Active = false;
             target.ReleaseMouse();
             e.StopPropagation();
@@ -164,19 +147,25 @@ namespace GraphViewPlayer
 
         private void OnMouseMove(MouseMoveEvent e)
         {
-            if (!m_Active)
-                return;
+            if (!m_Active) { return; }
 
-            m_Rectangle.end = e.localMousePosition;
+            m_Rectangle.End = e.localMousePosition;
             e.StopPropagation();
         }
 
         private class RectangleSelect : VisualElement
         {
-            private Vector2 m_Start;
             private Vector2 m_End;
+            private Vector2 m_Start;
 
-           internal Vector2 start
+            internal RectangleSelect()
+            {
+                AddToClassList("marquee");
+                pickingMode = PickingMode.Ignore;
+                generateVisualContent = OnGenerateVisualContent;
+            }
+
+            internal Vector2 Start
             {
                 get => m_Start;
                 set
@@ -186,7 +175,7 @@ namespace GraphViewPlayer
                 }
             }
 
-            internal Vector2 end
+            internal Vector2 End
             {
                 get => m_End;
                 set
@@ -196,7 +185,7 @@ namespace GraphViewPlayer
                 }
             }
 
-            internal RectangleCoordinates coordinates
+            internal RectangleCoordinates Coordinates
             {
                 get => new() { start = m_Start, end = m_End };
                 set
@@ -207,21 +196,12 @@ namespace GraphViewPlayer
                 }
             }
 
-            internal Rect SelectionRect
-            {
-                get => new()
+            internal Rect SelectionRect =>
+                new()
                 {
                     min = new(Math.Min(m_Start.x, m_End.x), Math.Min(m_Start.y, m_End.y)),
-                    max = new(Math.Max(m_Start.x, m_End.x), Math.Max(m_Start.y, m_End.y)),
+                    max = new(Math.Max(m_Start.x, m_End.x), Math.Max(m_Start.y, m_End.y))
                 };
-            }
-
-            internal RectangleSelect()
-            {
-                AddToClassList("marquee");
-                pickingMode = PickingMode.Ignore;
-                generateVisualContent = OnGenerateVisualContent;
-            }
 
             private void OnGenerateVisualContent(MeshGenerationContext ctx)
             {

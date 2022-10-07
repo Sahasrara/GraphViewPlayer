@@ -316,10 +316,10 @@ namespace GraphViewPlayer
 
             if (m_RenderPointsDirty == false && ControlPoints != null) { return; }
 
-            Vector2 p1 = Graph.contentViewContainer.ChangeCoordinatesTo(this, ControlPoints[0]);
-            Vector2 p2 = Graph.contentViewContainer.ChangeCoordinatesTo(this, ControlPoints[1]);
-            Vector2 p3 = Graph.contentViewContainer.ChangeCoordinatesTo(this, ControlPoints[2]);
-            Vector2 p4 = Graph.contentViewContainer.ChangeCoordinatesTo(this, ControlPoints[3]);
+            Vector2 p1 = Graph.ContentContainer.ChangeCoordinatesTo(this, ControlPoints[0]);
+            Vector2 p2 = Graph.ContentContainer.ChangeCoordinatesTo(this, ControlPoints[1]);
+            Vector2 p3 = Graph.ContentContainer.ChangeCoordinatesTo(this, ControlPoints[2]);
+            Vector2 p4 = Graph.ContentContainer.ChangeCoordinatesTo(this, ControlPoints[3]);
 
             // Only compute this when the "local" points have actually changed
             if (m_LastLocalControlPoints.Count == 4)
@@ -828,5 +828,7 @@ namespace GraphViewPlayer
             UpdateLayout();
         }
         #endregion
+
+        public override string ToString() => $"Output({Output}) -> Input({Input})";
     }
 }

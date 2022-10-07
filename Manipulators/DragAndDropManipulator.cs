@@ -60,7 +60,8 @@ namespace GraphViewPlayer
                 get => m_MousePosition;
                 internal set
                 {
-                    // The first time we set this, MousePositionPrevious needs to hold the same value or delta values will be calculated incorrectly
+                    // The first time we set this, MousePositionPrevious needs to hold the same value or delta values
+                    // will be calculated incorrectly
                     if (m_MousePositionInitialized) { MousePositionPrevious = m_MousePosition; }
                     else
                     {
@@ -108,8 +109,12 @@ namespace GraphViewPlayer
         #region Event Handlers
         private void OnMouseDown(MouseDownEvent e)
         {
-            // Sanity
-            if (m_MouseDown || m_BreachedDragThreshold) { throw new("Received second MouseDown before MouseUp"); }
+            // Don't tolerate clicking other buttons while dragging 
+            if (m_MouseDown)
+            {
+                CancelDrag(e);
+                return;
+            }
 
             // Pick top level draggable 
             m_Draggable = e.target as IDraggable;
@@ -184,7 +189,7 @@ namespace GraphViewPlayer
             {
                 // Drop exit
                 CheckForDragExit();
-                
+
                 // Drop enter
                 m_CurrentDragContext.Droppable = droppable;
                 m_CurrentDragContext.Droppable.OnDropEnter(m_CurrentDragContext);
@@ -217,14 +222,15 @@ namespace GraphViewPlayer
                 m_CurrentDragContext.Droppable.OnDrop(m_CurrentDragContext);
                 m_CurrentDragContext.Droppable.OnDropExit(m_CurrentDragContext);
             }
- 
+
             // Check if user requested a cancel
+            Debug.Log($"Finished drop, shoudl cancel? {m_CurrentDragContext.CancelRequested}");
             if (m_CurrentDragContext.CancelRequested)
             {
                 CancelDrag(e);
                 return;
             }
-            
+
             // Complete drag
             m_Draggable.OnDragEnd(m_CurrentDragContext);
 
@@ -234,11 +240,7 @@ namespace GraphViewPlayer
 
         private void OnMouseCaptureOutEvent(MouseCaptureOutEvent e)
         {
-            if (m_MouseDown)
-            {
-                Debug.Log("CAPTURE LOST");
-                CancelDrag(e);
-            }
+            if (m_MouseDown) { CancelDrag(e); }
         }
 
         private void OnKeyDown(KeyDownEvent e)
@@ -259,7 +261,7 @@ namespace GraphViewPlayer
             T toFind = null;
             foreach (VisualElement visualElement in m_PickList)
             {
-                if (exclude.Length > 0 && Array.IndexOf(exclude, visualElement) == -1) continue;
+                if (exclude.Length > 0 && Array.IndexOf(exclude, visualElement) == -1) { continue; }
                 if (visualElement is T found)
                 {
                     toFind = found;
@@ -285,6 +287,7 @@ namespace GraphViewPlayer
         private void CancelDrag<T>(MouseEventBase<T> e) where T : MouseEventBase<T>, new()
         {
             // Only need to notify if we breached the drag threshold so they can reset
+            Debug.Log($"Starting cancel {m_BreachedDragThreshold}");
             if (m_BreachedDragThreshold)
             {
                 m_CurrentDragContext.MouseButton = (MouseButton)e.button;

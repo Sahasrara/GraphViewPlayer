@@ -2,6 +2,8 @@
 // Copyright (c) Unity Technologies. For terms of use, see
 // https://unity3d.com/legal/licenses/Unity_Reference_Only_License
 
+using System.Collections.Generic;
+using System.Linq;
 using UnityEngine;
 using UnityEngine.UIElements;
 
@@ -9,31 +11,34 @@ namespace GraphViewPlayer
 {
     public abstract class BaseEdge : GraphElement, IDraggable
     {
-        protected Port m_InputPort;
+        protected BasePort m_InputPort;
         private Vector2 m_InputPortPosition;
         protected bool m_InputPositionOverridden;
         protected Vector2 m_InputPositionOverride;
 
-        protected Port m_OutputPort;
+        protected BasePort m_OutputPort;
         private Vector2 m_OutputPortPosition;
         protected bool m_OutputPositionOverridden;
         protected Vector2 m_OutputPositionOverride;
 
-        public BaseEdge() =>
+        public BaseEdge()
+        {
+            DraggedEdges = new();
             Capabilities
                 |= Capabilities.Selectable
                    | Capabilities.Deletable
                    | Capabilities.Movable;
+        }
 
         public bool IsGhostEdge { get; set; }
 
-        public Port Output
+        public BasePort Output
         {
             get => m_OutputPort;
             set => SetPort(ref m_OutputPort, value);
         }
 
-        public Port Input
+        public BasePort Input
         {
             get => m_InputPort;
             set => SetPort(ref m_InputPort, value);
@@ -62,7 +67,7 @@ namespace GraphViewPlayer
         public Orientation InputOrientation => Input?.Orientation ?? (Output?.Orientation ?? Orientation.Horizontal);
         public Orientation OutputOrientation => Output?.Orientation ?? (Input?.Orientation ?? Orientation.Horizontal);
 
-        private void SetPort(ref Port portToSet, Port newPort) //, Action<bool> drawCapSetter)
+        private void SetPort(ref BasePort portToSet, BasePort newPort)
         {
             if (newPort != portToSet)
             {
@@ -108,11 +113,12 @@ namespace GraphViewPlayer
             Disconnect();
             ResetLayer();
             UnsetPositionOverrides();
+            Selected = false;
         }
         #endregion
 
         #region Ports
-        public void SetPortByDirection(Port port)
+        public void SetPortByDirection(BasePort port)
         {
             if (port.Direction == Direction.Input) { Input = port; }
             else { Output = port; }
@@ -124,7 +130,7 @@ namespace GraphViewPlayer
             Output = null;
         }
 
-        private void TrackPort(Port port)
+        private void TrackPort(BasePort port)
         {
             port.OnPositionChange += OnPortPositionChanged;
 
@@ -143,7 +149,7 @@ namespace GraphViewPlayer
             OnPortPositionChanged(new() { element = port });
         }
 
-        private void UntrackPort(Port port)
+        private void UntrackPort(BasePort port)
         {
             port.OnPositionChange -= OnPortPositionChanged;
 
@@ -165,7 +171,7 @@ namespace GraphViewPlayer
 
         private void OnPortPositionChanged(PositionData changeData)
         {
-            Port p = changeData.element as Port;
+            BasePort p = changeData.element as BasePort;
             if (p != null && Graph != null)
             {
                 if (p == m_InputPort) { UpdateCachedInputPortPosition(); }
@@ -177,14 +183,14 @@ namespace GraphViewPlayer
         private void UpdateCachedInputPortPosition()
         {
             if (Graph == null || Input == null) { return; }
-            m_InputPortPosition = Graph.contentViewContainer.WorldToLocal(Input.GetGlobalCenter());
+            m_InputPortPosition = Graph.ContentContainer.WorldToLocal(Input.GetGlobalCenter());
             if (!m_InputPositionOverridden) { m_InputPositionOverride = m_InputPortPosition; }
         }
 
         private void UpdateCachedOutputPortPosition()
         {
             if (Graph == null || Output == null) { return; }
-            m_OutputPortPosition = Graph.contentViewContainer.WorldToLocal(Output.GetGlobalCenter());
+            m_OutputPortPosition = Graph.ContentContainer.WorldToLocal(Output.GetGlobalCenter());
             if (!m_OutputPositionOverridden) { m_OutputPositionOverride = m_OutputPortPosition; }
         }
         #endregion
@@ -206,7 +212,7 @@ namespace GraphViewPlayer
                 position, out m_OutputPositionOverride, out m_OutputPositionOverridden, ref m_OutputPort);
 
         private void SetPositionOverride(Vector2 position, out Vector2 overrideValueToSet,
-            out bool overrideFlagToSet, ref Port portToUpdate)
+            out bool overrideFlagToSet, ref BasePort portToUpdate)
         {
             overrideFlagToSet = true;
             overrideValueToSet = position;
@@ -232,11 +238,13 @@ namespace GraphViewPlayer
         #endregion
 
         #region IDraggable
+        internal List<BaseEdge> DraggedEdges { get; }
+
         public void OnDragBegin(IDragBeginContext context)
         {
             // Check if we need to cancel
             if (context.IsCancelled()) { return; }
-            if (Graph == null || !IsMovable())
+            if (Graph == null || !IsMovable() || !CanStartManipulation(context.MouseButton, context.MouseModifiers))
             {
                 context.CancelDrag();
                 return;
@@ -257,7 +265,7 @@ namespace GraphViewPlayer
             }
 
             // This is the first time we breached the drag threshold
-            Port anchoredPort;
+            BasePort anchoredPort;
             bool isDragStart = context.GetUserData() == null;
             if (isDragStart)
             {
@@ -273,37 +281,24 @@ namespace GraphViewPlayer
                     anchoredPort = distanceFromInput < distanceFromOutput ? Output : Input;
                 }
 
+                // Populate dragged edges
+                CollectDraggedEdges(Input == anchoredPort ? Output : Input);
+
                 // Set user data
                 context.SetUserData(this);
-
-                // Move to front
-                Layer = int.MaxValue;
 
                 // Track for panning
                 Graph.TrackElementForPan(this);
             }
             else { anchoredPort = IsInputPositionOverriden() ? Output : Input; }
 
-            // Grab dragged port
-            Port draggedPort = Input == anchoredPort ? Output : Input;
-
             // Vector2 newPosition = GetOutputPositionOverride() + context.MouseDelta / Graph.CurrentScale; 
-            Vector2 newPosition = Graph.contentViewContainer.WorldToLocal(context.MousePosition);
-            if (draggedPort != null && draggedPort.allowMultiDrag)
+            Vector2 newPosition = Graph.ContentContainer.WorldToLocal(context.MousePosition);
+            for (int i = 0; i < DraggedEdges.Count; i++)
             {
-                foreach (BaseEdge edge in draggedPort.Connections)
-                {
-                    if (edge.Selected)
-                    {
-                        if (draggedPort.Direction == Direction.Input) { edge.SetInputPositionOverride(newPosition); }
-                        else { edge.SetOutputPositionOverride(newPosition); }
-                    }
-                }
-            }
-            else
-            {
-                if (anchoredPort.Direction == Direction.Output) { SetInputPositionOverride(newPosition); }
-                else { SetOutputPositionOverride(newPosition); }
+                BaseEdge draggedEdge = DraggedEdges[i];
+                if (anchoredPort.Direction == Direction.Input) { draggedEdge.SetOutputPositionOverride(newPosition); }
+                else { draggedEdge.SetInputPositionOverride(newPosition); }
             }
 
             // Only light compatible anchors when dragging an edge, otherwise we can't tell if it's a candidate edge.
@@ -312,19 +307,22 @@ namespace GraphViewPlayer
 
         public void OnDragEnd(IDragEndContext context)
         {
+            // Clear dragged edges
+            DraggedEdges.Clear();
+
             // Could have been deleted
             if (Graph == null) { return; }
 
-            // Untrack for panning
-            Graph.UntrackElementForPan(this);
-
-            // Reset position
-            // TODO - is this really required?
-            foreach (BaseEdge edge in Graph.EdgesSelected)
-            {
-                edge.ResetLayer();
-                edge.UnsetPositionOverrides();
-            }
+            // // Untrack for panning
+            // Graph.UntrackElementForPan(this);
+            //
+            // // Reset position
+            // // TODO - is this really required?
+            // foreach (BaseEdge edge in Graph.EdgesSelected)
+            // {
+            //     edge.ResetLayer();
+            //     edge.UnsetPositionOverrides();
+            // }
 
             // Reset ports
             Graph.IlluminateAllPorts();
@@ -332,22 +330,65 @@ namespace GraphViewPlayer
 
         public void OnDragCancel(IDragCancelContext context)
         {
+            // Reset position
+            // GraphView graph = Graph;
+            bool highlightsReset = false;
+            // if (graph != null) 
+                // graph.IlluminateAllPorts();
+            for (int i = 0; i < DraggedEdges.Count; i++)
+            {
+                BaseEdge edge = DraggedEdges[i];
+                if (edge.IsRealEdge())
+                {
+                    edge.ResetLayer();
+                    edge.UnsetPositionOverrides();
+                    edge.Selected = false;
+                }
+                else if (edge.Graph != null)
+                {
+                    if (!highlightsReset)
+                    {
+                        edge.Graph.IlluminateAllPorts();
+                        highlightsReset = true;
+                    }
+                    edge.Graph.RemoveElement(edge);
+                }
+            }
+            
+            // Clear dragged edges
+            DraggedEdges.Clear();
+
             // Could have been deleted
             if (Graph == null) { return; }
 
             // Untrack for panning
             Graph.UntrackElementForPan(this, true);
 
-            // Reset position
-            // TODO - is this really required?
-            foreach (BaseEdge edge in Graph.EdgesSelected)
-            {
-                edge.ResetLayer();
-                edge.UnsetPositionOverrides();
-            }
-
             // Reset ports
             Graph.IlluminateAllPorts();
+        }
+        
+        protected virtual bool CanStartManipulation(MouseButton mouseButton, EventModifiers mouseModifiers)
+        {
+            if (mouseButton != MouseButton.LeftMouse) { return false; }
+            if (mouseModifiers.IsNone()) { return true; }
+            return false;
+        }
+
+        private void CollectDraggedEdges(BasePort draggedPort)
+        {
+            // Grab dragged edges
+            if (draggedPort != null && draggedPort.allowMultiDrag)
+            {
+                foreach (BaseEdge edge in draggedPort.Connections)
+                {
+                    if (edge.Selected)
+                    {
+                        DraggedEdges.Add(edge);
+                    }
+                }
+            }
+            else { DraggedEdges.Add(this); }
         }
         #endregion
     }

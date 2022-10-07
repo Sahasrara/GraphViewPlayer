@@ -112,7 +112,7 @@ namespace GraphViewPlayer
 
         #region Position
         public virtual event Action<PositionData> OnPositionChange;
-        public virtual Vector2 GetGlobalCenter() => Graph.contentViewContainer.LocalToWorld(GetCenter());
+        public virtual Vector2 GetGlobalCenter() => Graph.ContentContainer.LocalToWorld(GetCenter());
         public virtual Vector2 GetCenter() => layout.center + (Vector2)transform.position;
         public virtual Vector2 GetPosition() => transform.position;
 

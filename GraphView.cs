@@ -22,21 +22,10 @@ namespace GraphViewPlayer
         private const float k_MaxPanSpeed = k_MaxSpeedFactor * k_PanSpeed;
         private const float k_PanAreaWidthAndMinSpeedFactor = k_PanAreaWidth + k_MinSpeedFactor;
 
+        private static StyleSheet s_DefaultStyle;
+
         private readonly Dictionary<int, Layer> m_ContainerLayers;
 
-        private static StyleSheet s_DefaultStyle;
-        private static StyleSheet DefaultStyle
-        {
-            get
-            {
-                if (s_DefaultStyle == null)
-                {
-                    s_DefaultStyle = Resources.Load<StyleSheet>("GraphViewPlayer/GraphView");
-                }
-                return s_DefaultStyle;
-            }
-        }
-        
         #region Constructor
         protected GraphView()
         {
@@ -55,51 +44,44 @@ namespace GraphViewPlayer
             this.AddManipulator(m_Zoomer);
             this.AddManipulator(new DragAndDropManipulator());
 
-            // this.AddManipulator(new ContentDragger());
-            // this.AddManipulator(new RectangleSelector());
-            // this.AddManipulator(new DragAndDropManipulator());
-            // this.AddManipulator(new SelectionDragger());
-            // this.AddManipulator(new DragAndDropManipulator());
-
             //
             // Graph View Container & Grid - Level 1
             //
             // Root Container
-            graphViewContainer = new GridBackground();
-            hierarchy.Add(graphViewContainer);
+            GraphViewContainer = new GridBackground();
+            hierarchy.Add(GraphViewContainer);
 
             //
             // Rectangular Selection and Droppable Backstop
             //
-            backstop = new(this);
-            // backstop.AddManipulator(new RectangleSelector());
-            graphViewContainer.Add(backstop);
+            Backstop = new(this);
+            GraphViewContainer.Add(Backstop);
 
             //
             // Content Container - Level 2
             //
             // Content Container
-            contentViewContainer = new ContentViewContainer
+            ContentContainer = new ContentView
             {
                 pickingMode = PickingMode.Ignore,
                 usageHints = UsageHints.GroupTransform
             };
-            contentViewContainer.AddToClassList("content-view-container");
-            graphViewContainer.Add(contentViewContainer);
+            ContentContainer.AddToClassList("content-view-container");
+            GraphViewContainer.Add(ContentContainer);
 
             //
             // Other Initialization
             //
             // Cached Queries
-            ElementsAll = contentViewContainer.Query<GraphElement>().Build();
-            ElementsSelected = contentViewContainer.Query<GraphElement>().Where(WhereSelected).Build();
-            ElementsUnselected = contentViewContainer.Query<GraphElement>().Where(WhereUnselected).Build();
+            ElementsAll = ContentContainer.Query<GraphElement>().Build();
+            ElementsSelected = ContentContainer.Query<GraphElement>().Where(WhereSelected).Build();
+            ElementsUnselected = ContentContainer.Query<GraphElement>().Where(WhereUnselected).Build();
 
-            Nodes = contentViewContainer.Query<Node>().Build();
-            NodesSelected = contentViewContainer.Query<Node>().Where(WhereSelected).Build();
+            Nodes = ContentContainer.Query<Node>().Build();
+            NodesSelected = ContentContainer.Query<Node>().Where(WhereSelected).Build();
             Edges = this.Query<Layer>().Children<BaseEdge>().Build();
             EdgesSelected = this.Query<Layer>().Children<BaseEdge>().Where(WhereSelected).Build();
-            Ports = contentViewContainer.Query().Children<Layer>().Descendents<Port>().Build();
+            Ports = ContentContainer.Query().Children<Layer>().Descendents<BasePort>().Build();
 
             // Layers
             m_ContainerLayers = new();
@@ -116,40 +98,56 @@ namespace GraphViewPlayer
         }
         #endregion
 
+        private static StyleSheet DefaultStyle
+        {
+            get
+            {
+                if (s_DefaultStyle == null)
+                {
+                    s_DefaultStyle = Resources.Load<StyleSheet>("GraphViewPlayer/GraphView");
+                }
+                return s_DefaultStyle;
+            }
+        }
+
+        #region Properties
         internal ViewTransformChanged OnViewTransformChanged { get; set; }
 
-        private Backstop backstop { get; }
-        private VisualElement graphViewContainer { get; }
-        public VisualElement contentViewContainer { get; }
-
-        public ITransform viewTransform => contentViewContainer.transform;
+        private GraphViewBackstop Backstop { get; }
+        private VisualElement GraphViewContainer { get; }
+        public VisualElement ContentContainer { get; }
+        public ITransform ViewTransform => ContentContainer.transform;
 
         public UQueryState<Node> Nodes { get; }
         public UQueryState<Node> NodesSelected { get; }
-        public UQueryState<Port> Ports { get; }
+        public UQueryState<BasePort> Ports { get; }
         public UQueryState<BaseEdge> Edges { get; }
         public UQueryState<BaseEdge> EdgesSelected { get; }
         public UQueryState<GraphElement> ElementsAll { get; }
         public UQueryState<GraphElement> ElementsSelected { get; }
         public UQueryState<GraphElement> ElementsUnselected { get; }
-        
-        #region Edges
-        public delegate BaseEdge EdgeFactory();
-        public EdgeFactory CreateEdge { get; set; } = CreateDefaultEdge;
-        private static BaseEdge CreateDefaultEdge() => new Edge();
+        #endregion
+
+        #region Factories
+        public virtual BaseEdge CreateEdge() => new Edge();
+
+        public virtual BasePort CreatePort(Orientation orientation, Direction direction, PortCapacity capacity)
+            => new(orientation, direction, capacity);
         #endregion
 
         #region View Transform
         internal delegate void ViewTransformChanged(GraphView graphView);
+
         public void UpdateViewTransform(Vector3 newPosition)
-            => UpdateViewTransform(newPosition, viewTransform.scale);
+            => UpdateViewTransform(newPosition, ViewTransform.scale);
+
         public void UpdateViewTransform(Vector3 newPosition, Vector3 newScale)
         {
             float validateFloat = newPosition.x + newPosition.y + newPosition.z + newScale.x + newScale.y + newScale.z;
             if (float.IsInfinity(validateFloat) || float.IsNaN(validateFloat)) { return; }
 
-            viewTransform.scale = newScale;
-            viewTransform.position = newPosition;
+            ViewTransform.scale = newScale;
+            ViewTransform.position = newPosition;
 
             OnViewTransformChanged?.Invoke(this);
             OnViewportChanged();
@@ -176,7 +174,7 @@ namespace GraphViewPlayer
             {
                 m_PanSchedule.Pause();
                 m_PanElement = null;
-                if (resetView) UpdateViewTransform((Vector2)viewTransform.position + m_PanOriginDiff);
+                if (resetView) { UpdateViewTransform((Vector2)ViewTransform.position + m_PanOriginDiff); }
                 return m_PanOriginDiff;
             }
             return Vector2.zero;
@@ -190,9 +188,9 @@ namespace GraphViewPlayer
             {
                 effectiveSpeed.x = -((k_PanAreaWidth - mousePos.x) / k_PanAreaWidthAndMinSpeedFactor) * k_PanSpeed;
             }
-            else if (mousePos.x >= graphViewContainer.layout.width - k_PanAreaWidth)
+            else if (mousePos.x >= GraphViewContainer.layout.width - k_PanAreaWidth)
             {
-                effectiveSpeed.x = (mousePos.x - (graphViewContainer.layout.width - k_PanAreaWidth))
+                effectiveSpeed.x = (mousePos.x - (GraphViewContainer.layout.width - k_PanAreaWidth))
                     / k_PanAreaWidthAndMinSpeedFactor * k_PanSpeed;
             }
 
@@ -200,9 +198,9 @@ namespace GraphViewPlayer
             {
                 effectiveSpeed.y = -((k_PanAreaWidth - mousePos.y) / k_PanAreaWidthAndMinSpeedFactor) * k_PanSpeed;
             }
-            else if (mousePos.y >= graphViewContainer.layout.height - k_PanAreaWidth)
+            else if (mousePos.y >= GraphViewContainer.layout.height - k_PanAreaWidth)
             {
-                effectiveSpeed.y = (mousePos.y - (graphViewContainer.layout.height - k_PanAreaWidth))
+                effectiveSpeed.y = (mousePos.y - (GraphViewContainer.layout.height - k_PanAreaWidth))
                     / k_PanAreaWidthAndMinSpeedFactor * k_PanSpeed;
             }
 
@@ -222,10 +220,10 @@ namespace GraphViewPlayer
             m_PanOriginDiff += speed;
 
             // Update the view transform (to pan)
-            UpdateViewTransform((Vector2)viewTransform.position - speed);
+            UpdateViewTransform((Vector2)ViewTransform.position - speed);
 
             // Speed is scaled according to the current zoom level
-            Vector2 localSpeed = speed / CurrentScale; 
+            Vector2 localSpeed = speed / CurrentScale;
 
             // Set position
             if (m_PanElementIsNode)
@@ -261,7 +259,7 @@ namespace GraphViewPlayer
 
                 // TODO
                 int indexOfLayer = m_ContainerLayers.OrderBy(t => t.Key).Select(t => t.Value).ToList().IndexOf(layer);
-                contentViewContainer.Insert(indexOfLayer, layer);
+                ContentContainer.Insert(indexOfLayer, layer);
             }
             return layer;
         }
@@ -310,17 +308,17 @@ namespace GraphViewPlayer
             }
         }
 
-        public float CurrentScale => viewTransform.scale.x;
+        public float CurrentScale => ViewTransform.scale.x;
 
         protected void ValidateTransform()
         {
-            if (contentViewContainer == null) { return; }
-            Vector3 transformScale = viewTransform.scale;
+            if (ContentContainer == null) { return; }
+            Vector3 transformScale = ViewTransform.scale;
 
             transformScale.x = Mathf.Clamp(transformScale.x, MinScale, MaxScale);
             transformScale.y = Mathf.Clamp(transformScale.y, MinScale, MaxScale);
 
-            UpdateViewTransform(viewTransform.position, transformScale);
+            UpdateViewTransform(ViewTransform.position, transformScale);
         }
         #endregion
 
@@ -550,19 +548,16 @@ namespace GraphViewPlayer
         #endregion
 
         #region Ports
-        public void ConnectPorts(Port input, Port output) { AddElement(input.ConnectTo(output)); }
-        
-        internal void IlluminateCompatiblePorts(Port port)
+        public void ConnectPorts(BasePort input, BasePort output) { AddElement(input.ConnectTo(output)); }
+
+        internal void IlluminateCompatiblePorts(BasePort port)
         {
-            foreach (Port otherPort in Ports)
-            {
-                otherPort.Highlight = port.CanConnectTo(otherPort);
-            }
+            foreach (BasePort otherPort in Ports) { otherPort.Highlight = port.CanConnectTo(otherPort); }
         }
 
         internal void IlluminateAllPorts()
         {
-            foreach (Port otherPort in Ports) { otherPort.Highlight = true; }
+            foreach (BasePort otherPort in Ports) { otherPort.Highlight = true; }
         }
         #endregion
 
@@ -570,7 +565,7 @@ namespace GraphViewPlayer
         protected void Frame()
         {
             // Construct rect for selected and unselected elements
-            Rect rectToFitSelected = contentViewContainer.layout;
+            Rect rectToFitSelected = ContentContainer.layout;
             Rect rectToFitUnselected = rectToFitSelected;
             bool reachedFirstSelected = false;
             bool reachedFirstUnselected = false;
@@ -582,26 +577,26 @@ namespace GraphViewPlayer
                 {
                     if (!reachedFirstSelected)
                     {
-                        rectToFitSelected = ge.ChangeCoordinatesTo(contentViewContainer, ge.Rect());
+                        rectToFitSelected = ge.ChangeCoordinatesTo(ContentContainer, ge.Rect());
                         reachedFirstSelected = true;
                     }
                     else
                     {
                         rectToFitSelected = RectUtils.Encompass(rectToFitSelected,
-                            ge.ChangeCoordinatesTo(contentViewContainer, ge.Rect()));
+                            ge.ChangeCoordinatesTo(ContentContainer, ge.Rect()));
                     }
                 }
                 else if (!reachedFirstSelected) // Don't bother if we already have at least one selected item
                 {
                     if (!reachedFirstUnselected)
                     {
-                        rectToFitUnselected = ge.ChangeCoordinatesTo(contentViewContainer, ge.Rect());
+                        rectToFitUnselected = ge.ChangeCoordinatesTo(ContentContainer, ge.Rect());
                         reachedFirstUnselected = true;
                     }
                     else
                     {
                         rectToFitUnselected = RectUtils.Encompass(rectToFitUnselected,
-                            ge.ChangeCoordinatesTo(contentViewContainer, ge.Rect()));
+                            ge.ChangeCoordinatesTo(ContentContainer, ge.Rect()));
                     }
                 }
             }
@@ -648,9 +643,6 @@ namespace GraphViewPlayer
         public void CalculateFrameTransform(Rect rectToFit, Rect clientRect, int border, out Vector3 frameTranslation,
             out Vector3 frameScaling)
         {
-            // Matrix4x4 m = GUI.matrix;
-            // GUI.matrix = Matrix4x4.TRS(Vector3.zero, Quaternion.identity, Vector3.one);
-
             // measure zoom level necessary to fit the canvas rect into the screen rect
             float zoomLevel = ZoomRequiredToFrameRect(rectToFit, clientRect, border);
 
@@ -677,8 +669,6 @@ namespace GraphViewPlayer
             // Update output values before leaving
             frameTranslation = new(offset.x, offset.y, 0.0f);
             frameScaling = parentScale;
-
-            // GUI.matrix = m;
         }
         #endregion
 
@@ -702,43 +692,10 @@ namespace GraphViewPlayer
             public Layer() => pickingMode = PickingMode.Ignore;
         }
 
-        private class Backstop : VisualElement, IDroppable
-        {
-            private GraphView m_GraphView; 
-
-            internal Backstop(GraphView graphView)
-            {
-                AddToClassList("backstop");
-                m_GraphView = graphView;
-            }
-
-            public void OnDropEnter(IDropEnterContext context) {  }
-            public void OnDrop(IDropContext context)
-            {
-                if (context.GetUserData() is BaseEdge edge)
-                {
-                    // Delete real edge
-                    if (edge.IsRealEdge()) m_GraphView.OnEdgeDelete(edge);
-                    // Delete candidate edge
-                    else m_GraphView.RemoveElement(edge);
-                    // Reset port highlights
-                    m_GraphView.IlluminateAllPorts();
-                } 
-            }
-            public void OnDropExit(IDropExitContext context) {  }
-        }
-
-        private class ContentViewContainer : VisualElement
+        private class ContentView : VisualElement
         {
             public override bool Overlaps(Rect r) => true;
         }
         #endregion
     }
-
-    #region Helpers
-    internal static class VisualElementExtensions
-    {
-        internal static Rect Rect(this VisualElement ve) => new(Vector2.zero, ve.layout.size);
-    }
-    #endregion
 }

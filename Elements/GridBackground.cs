@@ -77,7 +77,7 @@ namespace GraphViewPlayer
             {
                 throw new InvalidOperationException("GridBackground can only be added to a GraphView");
             }
-            m_Container = m_GraphView.contentViewContainer;
+            m_Container = m_GraphView.ContentContainer;
 
             // Listen for Zoom/Pan Changes
             m_GraphView.OnViewTransformChanged += RequestRepaint;

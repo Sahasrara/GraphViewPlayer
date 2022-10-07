@@ -124,14 +124,14 @@ namespace GraphViewPlayer
             IPanel panel = (evt.target as VisualElement)?.panel;
             if (panel.GetCapturingElement(PointerId.mousePointerId) != null) { return; }
 
-            Vector3 position = graphView.viewTransform.position;
-            Vector3 scale = graphView.viewTransform.scale;
+            Vector3 position = graphView.ViewTransform.position;
+            Vector3 scale = graphView.ViewTransform.scale;
 
             // TODO: augment the data to have the position as well, so we don't have to read in data from the target.
             // 0-1 ranged center relative to size
-            Vector2 zoomCenter = target.ChangeCoordinatesTo(graphView.contentViewContainer, evt.localMousePosition);
-            float x = zoomCenter.x + graphView.contentViewContainer.layout.x;
-            float y = zoomCenter.y + graphView.contentViewContainer.layout.y;
+            Vector2 zoomCenter = target.ChangeCoordinatesTo(graphView.ContentContainer, evt.localMousePosition);
+            float x = zoomCenter.x + graphView.ContentContainer.layout.x;
+            float y = zoomCenter.y + graphView.ContentContainer.layout.y;
 
             position += Vector3.Scale(new(x, y, 0), scale);
 

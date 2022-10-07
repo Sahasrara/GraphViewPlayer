@@ -7,42 +7,42 @@ using UnityEngine.UIElements;
 
 namespace GraphViewPlayer
 {
-    public class Node : GraphElement, IDraggable //, ICollectibleElement
+    public class Node : GraphElement, IDraggable
     {
         public Node()
         {
             // Root Container
-            mainContainer = this;
+            MainContainer = this;
 
             // Title Label
-            titleLabel = new() { pickingMode = PickingMode.Ignore };
-            titleLabel.AddToClassList("node-title-label");
+            TitleLabel = new() { pickingMode = PickingMode.Ignore };
+            TitleLabel.AddToClassList("node-title-label");
 
             // Title Container
-            titleContainer = new() { pickingMode = PickingMode.Ignore };
-            titleContainer.AddToClassList("node-title");
-            titleContainer.Add(titleLabel);
-            hierarchy.Add(titleContainer);
+            TitleContainer = new() { pickingMode = PickingMode.Ignore };
+            TitleContainer.AddToClassList("node-title");
+            TitleContainer.Add(TitleLabel);
+            hierarchy.Add(TitleContainer);
 
             // Input Container
-            inputContainer = new() { pickingMode = PickingMode.Ignore };
-            inputContainer.AddToClassList("node-io-input");
+            InputContainer = new() { pickingMode = PickingMode.Ignore };
+            InputContainer.AddToClassList("node-io-input");
 
             // Output Container
-            outputContainer = new() { pickingMode = PickingMode.Ignore };
-            outputContainer.AddToClassList("node-io-output");
+            OutputContainer = new() { pickingMode = PickingMode.Ignore };
+            OutputContainer.AddToClassList("node-io-output");
 
             // Top Container 
-            topContainer = new() { pickingMode = PickingMode.Ignore };
-            topContainer.AddToClassList("node-io");
-            topContainer.Add(inputContainer);
-            topContainer.Add(outputContainer);
-            hierarchy.Add(topContainer);
+            TopContainer = new() { pickingMode = PickingMode.Ignore };
+            TopContainer.AddToClassList("node-io");
+            TopContainer.Add(InputContainer);
+            TopContainer.Add(OutputContainer);
+            hierarchy.Add(TopContainer);
 
             // Extension Container
-            extensionContainer = new() { pickingMode = PickingMode.Ignore };
-            extensionContainer.AddToClassList("node-extension");
-            hierarchy.Add(extensionContainer);
+            ExtensionContainer = new() { pickingMode = PickingMode.Ignore };
+            ExtensionContainer.AddToClassList("node-extension");
+            hierarchy.Add(ExtensionContainer);
 
             // Style
             AddToClassList("node");
@@ -54,26 +54,22 @@ namespace GraphViewPlayer
                             | Capabilities.Ascendable
                 ;
             usageHints = UsageHints.DynamicTransform;
-
-            // Cache Queries
-            // inputPorts = inputContainer.Query<Port>().Build();
-            // outputPorts = outputContainer.Query<Port>().Build();
         }
 
-        public Label titleLabel { get; }
-        public VisualElement mainContainer { get; }
-        public VisualElement titleContainer { get; }
-        public VisualElement topContainer { get; }
-        public VisualElement inputContainer { get; }
-        public VisualElement outputContainer { get; }
-        public VisualElement extensionContainer { get; }
+        protected Label TitleLabel { get; }
+        protected VisualElement MainContainer { get; }
+        protected VisualElement TitleContainer { get; }
+        protected VisualElement TopContainer { get; }
+        protected VisualElement InputContainer { get; }
+        protected VisualElement OutputContainer { get; }
+        public VisualElement ExtensionContainer { get; }
 
         public override string Title
         {
-            get => titleLabel != null ? titleLabel.text : string.Empty;
+            get => TitleLabel != null ? TitleLabel.text : string.Empty;
             set
             {
-                if (titleLabel != null) { titleLabel.text = value; }
+                if (TitleLabel != null) { TitleLabel.text = value; }
             }
         }
 
@@ -89,89 +85,21 @@ namespace GraphViewPlayer
             }
         }
 
-        public virtual Port InstantiatePort(Orientation orientation, Direction direction, Port.PortCapacity capacity) =>
-            Port.Create<Edge>(this, orientation, direction, capacity);
-
-        // public virtual void CollectElements(HashSet<GraphElement> collectedElementSet,
-        //     Func<GraphElement, bool> conditionFunc)
-        // {
-        //     CollectConnectedEdges(collectedElementSet);
-        // }
-
-        // void AddConnectionsToDeleteSet(VisualElement container, ref HashSet<GraphElement> toDelete)
-        // {
-        //     List<GraphElement> toDeleteList = new List<GraphElement>();
-        //     container.Query<Port>().ForEach(elem =>
-        //     {
-        //         if (elem.connected)
-        //         {
-        //             foreach (Edge c in elem.connections)
-        //             {
-        //                 if ((c.capabilities & Capabilities.Deletable) == 0)
-        //                     continue;
-        //
-        //                 toDeleteList.Add(c);
-        //             }
-        //         }
-        //     });
-        //
-        //     toDelete.UnionWith(toDeleteList);
-        // }
-
-        // void DisconnectAll(DropdownMenuAction a)
-        // {
-        //     HashSet<GraphElement> toDelete = new HashSet<GraphElement>();
-        //
-        //     AddConnectionsToDeleteSet(inputContainer, ref toDelete);
-        //     AddConnectionsToDeleteSet(outputContainer, ref toDelete);
-        //     toDelete.Remove(null);
-        //
-        //     if (graphView != null)
-        //     {
-        //         graphView.DeleteElements(toDelete);
-        //     }
-        //     else
-        //     {
-        //         Debug.Log("Disconnecting nodes that are not in a GraphView will not work.");
-        //     }
-        // }
-
-        // DropdownMenuAction.Status DisconnectAllStatus(DropdownMenuAction a)
-        // {
-        //     VisualElement[] containers =
-        //     {
-        //         inputContainer, outputContainer
-        //     };
-        //
-        //     foreach (var container in containers)
-        //     {
-        //         var currentInputs = container.Query<Port>().ToList();
-        //         foreach (var elem in currentInputs)
-        //         {
-        //             if (elem.connected)
-        //             {
-        //                 return DropdownMenuAction.Status.Normal;
-        //             }
-        //         }
-        //     }
-        //
-        //     return DropdownMenuAction.Status.Disabled;
-        // }
-
-        // private void CollectConnectedEdges(HashSet<GraphElement> edgeSet)
-        // {
-        //     edgeSet.UnionWith(inputPorts.SelectMany(c => c.connections)
-        //         .Where(d => (d.Capabilities & Capabilities.Deletable) != 0));
-        //     edgeSet.UnionWith(outputPorts.SelectMany(c => c.connections)
-        //         .Where(d => (d.Capabilities & Capabilities.Deletable) != 0));
-        // }
+        #region Ports
+        public virtual void AddPort(BasePort port)
+        {
+            port.ParentNode = this;
+            if (port.Direction == Direction.Input) { InputContainer.Add(port); }
+            else { OutputContainer.Add(port); }
+        }
+        #endregion
 
         #region IDraggable
         public void OnDragBegin(IDragBeginContext context)
         {
             // Cancel checks 
             if (context.IsCancelled()) { return; }
-            if (Graph == null || !IsMovable())
+            if (Graph == null || !IsMovable() || !CanStartManipulation(context.MouseButton, context.MouseModifiers))
             {
                 context.CancelDrag();
                 return;
@@ -211,10 +139,14 @@ namespace GraphViewPlayer
             Vector2 totalDiff = (context.MouseResetDelta - Graph.UntrackElementForPan(this, true)) / Graph.CurrentScale;
 
             // Reset position
-            foreach (Node node in Graph.NodesSelected)
-            {
-                node.SetPosition(node.GetPosition() + totalDiff);
-            }
+            foreach (Node node in Graph.NodesSelected) { node.SetPosition(node.GetPosition() + totalDiff); }
+        }
+        
+        protected virtual bool CanStartManipulation(MouseButton mouseButton, EventModifiers mouseModifiers)
+        {
+            if (mouseButton != MouseButton.LeftMouse) { return false; }
+            if (mouseModifiers.IsNone()) { return true; }
+            return false;
         }
         #endregion
     }

@@ -4,6 +4,7 @@
 
 using System;
 using UnityEngine;
+using UnityEngine.UIElements;
 
 namespace GraphViewPlayer
 {
@@ -14,20 +15,11 @@ namespace GraphViewPlayer
             float minX = Mathf.Min(p1.x, p2.x);
             float maxX = Mathf.Max(p1.x, p2.x);
 
-            if (maxX > rect.xMax)
-            {
-                maxX = rect.xMax;
-            }
+            if (maxX > rect.xMax) { maxX = rect.xMax; }
 
-            if (minX < rect.xMin)
-            {
-                minX = rect.xMin;
-            }
+            if (minX < rect.xMin) { minX = rect.xMin; }
 
-            if (minX > maxX)
-            {
-                return false;
-            }
+            if (minX > maxX) { return false; }
 
             float minY = Mathf.Min(p1.y, p2.y);
             float maxY = Mathf.Max(p1.y, p2.y);
@@ -49,44 +41,33 @@ namespace GraphViewPlayer
                 minY = tmp;
             }
 
-            if (maxY > rect.yMax)
-            {
-                maxY = rect.yMax;
-            }
+            if (maxY > rect.yMax) { maxY = rect.yMax; }
 
-            if (minY < rect.yMin)
-            {
-                minY = rect.yMin;
-            }
+            if (minY < rect.yMin) { minY = rect.yMin; }
 
-            if (minY > maxY)
-            {
-                return false;
-            }
+            if (minY > maxY) { return false; }
 
             return true;
         }
 
-        public static Rect Encompass(Rect a, Rect b)
-        {
-            return new() 
+        public static Rect Encompass(Rect a, Rect b) =>
+            new()
             {
                 xMin = Math.Min(a.xMin, b.xMin),
                 yMin = Math.Min(a.yMin, b.yMin),
                 xMax = Math.Max(a.xMax, b.xMax),
                 yMax = Math.Max(a.yMax, b.yMax)
             };
-        }
 
-        public static Rect Inflate(Rect a, float left, float top, float right, float bottom)
-        {
-            return new() 
+        public static Rect Inflate(Rect a, float left, float top, float right, float bottom) =>
+            new()
             {
                 xMin = a.xMin - left,
                 yMin = a.yMin - top,
                 xMax = a.xMax + right,
                 yMax = a.yMax + bottom
             };
-        }
+
+        internal static Rect Rect(this VisualElement ve) => new(Vector2.zero, ve.layout.size);
     }
 }

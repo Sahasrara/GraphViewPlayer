@@ -87,7 +87,7 @@ namespace GraphViewPlayer
             GraphView graphView = target as GraphView;
             if (graphView == null) { return; }
 
-            m_Start = graphView.ChangeCoordinatesTo(graphView.contentViewContainer, e.localMousePosition);
+            m_Start = graphView.ChangeCoordinatesTo(graphView.ContentContainer, e.localMousePosition);
 
             m_Active = true;
             target.CaptureMouse();
@@ -101,12 +101,12 @@ namespace GraphViewPlayer
             GraphView graphView = target as GraphView;
             if (graphView == null) { return; }
 
-            Vector2 diff = graphView.ChangeCoordinatesTo(graphView.contentViewContainer, e.localMousePosition) -
+            Vector2 diff = graphView.ChangeCoordinatesTo(graphView.ContentContainer, e.localMousePosition) -
                            m_Start;
 
             // During the drag update only the view
-            Vector3 s = graphView.contentViewContainer.transform.scale;
-            graphView.UpdateViewTransform(graphView.viewTransform.position + Vector3.Scale(diff, s));
+            Vector3 s = graphView.ContentContainer.transform.scale;
+            graphView.UpdateViewTransform(graphView.ViewTransform.position + Vector3.Scale(diff, s));
 
             e.StopPropagation();
         }
@@ -118,8 +118,8 @@ namespace GraphViewPlayer
             GraphView graphView = target as GraphView;
             if (graphView == null) { return; }
 
-            Vector3 p = graphView.contentViewContainer.transform.position;
-            Vector3 s = graphView.contentViewContainer.transform.scale;
+            Vector3 p = graphView.ContentContainer.transform.position;
+            Vector3 s = graphView.ContentContainer.transform.scale;
 
             graphView.UpdateViewTransform(p, s);
 

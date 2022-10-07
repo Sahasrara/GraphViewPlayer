@@ -16,12 +16,6 @@
     font-size: 12px;
 }
 
-/*.graph-view-container {*/
-/*    flex-grow: 1;*/
-/*    flex-shrink: 0;*/
-/*    flex-basis: 0;*/
-/*}*/
-
 .backstop {
     position: absolute;
     width: 100%;
@@ -30,7 +24,6 @@
 
 .content-view-container {
     position: absolute;
-    /*transform-origin: 0 0;*/
 }
 
 .graph-element {
@@ -71,7 +64,6 @@
 .node-io {
     flex-direction: row;
     flex-wrap: nowrap;
-    /*flex: 0 1 auto;*/
     border-top-width: 1px;
     border-bottom-width: 1px;
     border-color: var(--node-separator-color);
@@ -81,25 +73,13 @@
 
 .node-io-input {
     flex-direction: column;
-    /*flex-basis: 100%;*/
-    /*flex-wrap: nowrap;*/
-    /*flex-grow: 1;*/
-    /*flex-shrink: 1;*/
     background-color: rgba(60, 60, 60, 0.804);
-    /*border-right-width: 1px;*/
-    /*border-color: var(--node-separator-color);*/
     padding: 4px;
 }
 
 .node-io-output {
     flex-direction: column;
-    /*flex-basis: 100%;*/
-    /*flex-wrap: nowrap;*/
-    /*flex-grow: 1;*/
-    /*flex-shrink: 1;*/
     background-color: rgba(46, 46, 46, 0.804);
-    /*border-left-width: 1px;*/
-    /*border-color: var(--node-separator-color);*/
     padding: 4px;
 }
 
@@ -137,11 +117,6 @@
 
 .port-label {
     color: #b2b2b2;
-    /*margin: 0px;*/
-    /*padding-top: 0px;*/
-    /*padding-bottom: 0px;*/
-    /*padding-left: 5px;*/
-    /*padding-right: 5px;*/
 }
 
 .port-connector-box {
@@ -168,7 +143,6 @@
     --edge-color-selected: rgba(240, 240, 240, 1);
     --edge-color-ghost: rgba(85, 85, 85, 1);
     --layer: -10;
-    /*transform-origin: 0 0;*/
     position: absolute;
 }
 
@@ -182,7 +156,6 @@
 .marquee {
     position: absolute;
     opacity: 0.25;
-    --layer: 100;
 }
 
 .hidden {

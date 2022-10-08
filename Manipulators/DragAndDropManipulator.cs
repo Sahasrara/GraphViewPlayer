@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using UnityEngine;
-using UnityEngine.Pool;
 using UnityEngine.UIElements;
 
 namespace GraphViewPlayer
@@ -9,11 +8,16 @@ namespace GraphViewPlayer
     public class DragAndDropManipulator : Manipulator
     {
         private readonly List<VisualElement> m_PickList;
-        private bool m_BreachedDragThreshold;
-        private DragAndDropContext m_CurrentDragContext;
-        private IDraggable m_Draggable;
+        
+        private int m_DragThreshold;
         private bool m_MouseDown;
-
+        private bool m_BreachedDragThreshold;
+        private object m_UserData;
+        private Vector2 m_MouseOrigin;
+        private Vector2 m_PreviousMousePosition;
+        private VisualElement m_Dragged;
+        private VisualElement m_PreviousDropTarget;
+        
         #region Constructor
         public DragAndDropManipulator() => m_PickList = new();
         #endregion
@@ -36,76 +40,6 @@ namespace GraphViewPlayer
             target.UnregisterCallback<KeyDownEvent>(OnKeyDown);
         }
 
-        #region Context
-        private class DragAndDropContext : IDragBeginContext, IDragContext, IDragEndContext, IDragCancelContext,
-            IDropEnterContext, IDropContext, IDropExitContext
-        {
-            private static readonly ObjectPool<DragAndDropContext> s_Pool = new(Create, Release, Destroy);
-            private Vector2 m_MousePosition;
-            private bool m_MousePositionInitialized;
-            private object m_UserData;
-
-            private DragAndDropContext() => CancelRequested = false;
-
-            public IDroppable Droppable { get; internal set; }
-            internal int DragThreshold { get; private set; }
-            internal bool CancelRequested { get; private set; }
-            public IDraggable Draggable { get; internal set; }
-            public Vector2 MouseDelta => MousePosition - MousePositionPrevious;
-            public Vector2 MouseResetDelta => MouseOrigin - MousePosition;
-            public Vector2 MouseOrigin { get; internal set; }
-
-            public Vector2 MousePosition
-            {
-                get => m_MousePosition;
-                internal set
-                {
-                    // The first time we set this, MousePositionPrevious needs to hold the same value or delta values
-                    // will be calculated incorrectly
-                    if (m_MousePositionInitialized) { MousePositionPrevious = m_MousePosition; }
-                    else
-                    {
-                        MousePositionPrevious = value;
-                        m_MousePositionInitialized = true;
-                    }
-                    m_MousePosition = value;
-                }
-            }
-
-            public Vector2 MousePositionPrevious { get; private set; }
-            public MouseButton MouseButton { get; internal set; }
-            public EventModifiers MouseModifiers { get; internal set; }
-
-            public object GetUserData() => m_UserData;
-            public void SetUserData(object userData) { m_UserData = userData; }
-            public bool IsCancelled() => CancelRequested;
-            public void CancelDrag() => CancelRequested = true;
-            public void SetDragThreshold(int threshold) => DragThreshold = Mathf.Max(threshold, 0);
-
-            internal static DragAndDropContext AcquireFromPool() => s_Pool.Get();
-            internal static void ReleaseFromPool(DragAndDropContext toRelease) => s_Pool.Release(toRelease);
-
-            private static DragAndDropContext Create() => new();
-
-            private static void Release(DragAndDropContext toRelease)
-            {
-                toRelease.m_UserData = null;
-                toRelease.m_MousePositionInitialized = false;
-                toRelease.Droppable = null;
-                toRelease.Draggable = null;
-                toRelease.MouseOrigin = Vector2.zero;
-                toRelease.MousePosition = Vector2.zero;
-                toRelease.MousePositionPrevious = Vector2.zero;
-                toRelease.MouseButton = MouseButton.LeftMouse;
-                toRelease.MouseModifiers = EventModifiers.None;
-                toRelease.CancelRequested = false;
-                toRelease.DragThreshold = 0;
-            }
-
-            private static void Destroy(DragAndDropContext toDestroy) { }
-        }
-        #endregion
-
         #region Event Handlers
         private void OnMouseDown(MouseDownEvent e)
         {
@@ -115,128 +49,242 @@ namespace GraphViewPlayer
                 CancelDrag(e);
                 return;
             }
-
-            // Pick top level draggable 
-            m_Draggable = e.target as IDraggable;
-            if (m_Draggable == null) { return; }
-
-            // Create draggable event context
+            
+            // Create event
             m_MouseDown = true;
-            m_CurrentDragContext = DragAndDropContext.AcquireFromPool();
-            m_CurrentDragContext.MouseButton = (MouseButton)e.button;
-            m_CurrentDragContext.MouseModifiers = e.modifiers;
-            m_CurrentDragContext.MouseOrigin = e.mousePosition;
-            m_CurrentDragContext.MousePosition = e.mousePosition;
-            m_CurrentDragContext.Draggable = m_Draggable;
-            m_Draggable.OnDragBegin(m_CurrentDragContext);
-
-            // Capturing ensures we retain the mouse events even if the mouse leaves the target.
-            target.CaptureMouse();
-            e.StopImmediatePropagation();
-
-            // Check for cancel request 
-            if (m_CurrentDragContext.CancelRequested) { Reset(); }
+            m_MouseOrigin = e.mousePosition;
+            using (DragBeginEvent dragBeginEvent = DragBeginEvent.GetPooled(e))
+            {
+                // Set parent
+                dragBeginEvent.ParentManipulator = this;
+                
+                // Set correct drag delta
+                dragBeginEvent.SetMouseDelta(Vector2.zero);
+                
+                // Send event
+                target.SendEvent(dragBeginEvent);
+            }
+            
+            // Record mouse position
+            m_PreviousMousePosition = e.mousePosition;
         }
-
+        
+        internal void OnDragBeginComplete(DragBeginEvent dragBeginEvent)
+        {
+            // Check for cancel request or nobody accepting the event
+            if (dragBeginEvent.IsCancelled() || m_Dragged == null || m_Dragged.parent == null)
+            {
+                Reset();
+            }
+            else
+            {
+                // Capture any threshold requests
+                m_DragThreshold = dragBeginEvent.GetDragThreshold();
+                        
+                // Capturing ensures we retain the mouse events even if the mouse leaves the target.
+                target.CaptureMouse();
+            }
+        }
+        
         private void OnMouseMove(MouseMoveEvent e)
         {
             // If the mouse isn't down, bail
             if (!m_MouseDown) { return; }
-
-            // Check if user requested a cancel
-            if (m_CurrentDragContext.CancelRequested)
+            
+            // Check if dragged is still in the hierarchy
+            if (m_Dragged.parent == null)
             {
                 CancelDrag(e);
                 return;
             }
-
-            // Consume this event since we're still tracking this drag (or potential drag)
-            e.StopImmediatePropagation();
-
-            // Update context and continue drag
-            m_CurrentDragContext.MouseButton = (MouseButton)e.button;
-            m_CurrentDragContext.MouseModifiers = e.modifiers;
-            m_CurrentDragContext.MousePosition = e.mousePosition;
 
             // Check if we're starting a drag
             if (!m_BreachedDragThreshold)
             {
                 // Have we breached the drag threshold?
-                if (Mathf.Abs(m_CurrentDragContext.MouseResetDelta.magnitude) < m_CurrentDragContext.DragThreshold)
+                Vector2 mouseOriginDiff = m_MouseOrigin - e.mousePosition;
+                if (Mathf.Abs(mouseOriginDiff.magnitude) < m_DragThreshold)
                 {
                     // Not time yet to start dragging
                     return;
                 }
-
+            
                 // We are starting a drag!
                 m_BreachedDragThreshold = true;
             }
-
+            
             // We breached the threshold, time to drag
-            m_Draggable.OnDrag(m_CurrentDragContext);
-
-            // Check for cancel request
-            if (m_CurrentDragContext.CancelRequested)
+            using (DragEvent dragEvent = DragEvent.GetPooled(e))
             {
-                CancelDrag(e);
-                return;
+                // Set parent
+                dragEvent.ParentManipulator = this;
+                
+                // Set target
+                dragEvent.target = m_Dragged;
+                
+                // Set correct drag delta
+                dragEvent.SetMouseDelta(e.mousePosition - m_PreviousMousePosition);
+                
+                // Send event
+                target.SendEvent(dragEvent);
             }
+            
+            // Record mouse position
+            m_PreviousMousePosition = e.mousePosition;
+        }
 
-            // Look for droppable
-            IDroppable droppable = PickFirstOfType<IDroppable>(e.mousePosition);
-            if (droppable == null) { CheckForDragExit(); }
-            else
+        internal void OnDragComplete(DragEvent dragEvent)
+        {
+            // Check for cancel request
+            if (dragEvent.IsCancelled() || m_Dragged.parent == null)
             {
-                // Drop exit
-                CheckForDragExit();
+                CancelDrag(dragEvent);
+                return;
+            } 
+            
+            // Look for droppable
+            VisualElement pick = PickFirstExcluding(dragEvent.mousePosition, m_Dragged);
+            if (pick == m_PreviousDropTarget) return;
+            Debug.Log($"PICK {pick}"); // Pick isn't excluding all selected........
+            
+            // Check if we need to fire an exit event
+            AttemptDropExit(dragEvent); 
+            
+            // Record new pick
+            m_PreviousDropTarget = pick;
+            if (pick == null) return;
+            
+            // Send drop enter event
+            using (DropEnterEvent dropEnterEvent = DropEnterEvent.GetPooled(dragEvent))
+            {
+                // Set parent
+                dropEnterEvent.ParentManipulator = this;
+                
+                // Set target
+                dropEnterEvent.target = pick;
 
                 // Drop enter
-                m_CurrentDragContext.Droppable = droppable;
-                m_CurrentDragContext.Droppable.OnDropEnter(m_CurrentDragContext);
+                target.SendEvent(dropEnterEvent);
             }
         }
+
+        internal void OnDropEnterComplete(DropEnterEvent dropEnterEvent) { }
 
         private void OnMouseUp(MouseUpEvent e)
         {
             // If the mouse isn't down or we're not dragging
-            if (!m_MouseDown) { return; }
-
-            // Check if user requested a cancel
-            if (m_CurrentDragContext.CancelRequested)
+            if (!m_MouseDown) { return; } 
+            
+            // Make sure the dragged element still exists 
+            if (m_Dragged.parent == null)
             {
                 CancelDrag(e);
                 return;
-            }
-
-            // Consume this event since we're still tracking this drag (or potential drag)
-            e.StopImmediatePropagation();
-
-            // Update context 
-            m_CurrentDragContext.MouseButton = (MouseButton)e.button;
-            m_CurrentDragContext.MouseModifiers = e.modifiers;
-            m_CurrentDragContext.MousePosition = e.mousePosition;
-
-            // Check for drop
-            if (m_CurrentDragContext.Droppable != null)
+            } 
+            
+            // Send drop event
+            using (DropEvent dropEvent = DropEvent.GetPooled(e))
             {
-                m_CurrentDragContext.Droppable.OnDrop(m_CurrentDragContext);
-                m_CurrentDragContext.Droppable.OnDropExit(m_CurrentDragContext);
+                // Set parent
+                dropEvent.ParentManipulator = this;
+                
+                // Check if we skipped the drop
+                if (m_PreviousDropTarget == null)
+                {
+                    OnDropComplete(dropEvent);
+                    return;
+                }
+                
+                // Set target 
+                dropEvent.target = m_PreviousDropTarget;
+                
+                // Send drop event
+                Debug.Log($"Sending drop to {m_PreviousDropTarget}");
+                target.SendEvent(dropEvent);
             }
-
-            // Check if user requested a cancel
-            Debug.Log($"Finished drop, shoudl cancel? {m_CurrentDragContext.CancelRequested}");
-            if (m_CurrentDragContext.CancelRequested)
+        }
+        
+        internal void OnDropComplete(DropEvent dropEvent)
+        {
+            // Check if cancelled
+            if (dropEvent.IsCancelled() || m_Dragged.parent == null)
             {
-                CancelDrag(e);
+                CancelDrag(dropEvent);
                 return;
             }
-
+            
             // Complete drag
-            m_Draggable.OnDragEnd(m_CurrentDragContext);
+            using (DragEndEvent dragEndEvent = DragEndEvent.GetPooled(dropEvent))
+            {
+                // Set parent
+                dragEndEvent.ParentManipulator = this;
+                
+                // Set target
+                dragEndEvent.target = m_Dragged;
+                
+                // Set delta to a value that would reset the drag 
+                dragEndEvent.DeltaToDragOrigin = m_MouseOrigin - dragEndEvent.mousePosition;
+                
+                // Send event
+                target.SendEvent(dragEndEvent);
+            } 
+        }
 
+        internal void OnDragEndComplete(DragEndEvent dragEndEvent)
+        {
             // Reset everything
+            Reset(); 
+        }
+        
+        private void CancelDrag(EventBase e)
+        {
+            if (m_BreachedDragThreshold)
+            {
+                using (DragCancelEvent dragCancelEvent = DragCancelEvent.GetPooled())
+                {
+                    // Set parent
+                    dragCancelEvent.ParentManipulator = this;
+                    
+                    // Set target
+                    dragCancelEvent.target = m_Dragged;
+                    
+                    // Set mouse delta to a value that would reset the drag 
+                    dragCancelEvent.DeltaToDragOrigin = m_MouseOrigin - m_PreviousMousePosition;
+                    
+                    // Send cancel event
+                    target.SendEvent(dragCancelEvent);
+                    
+                    // Check for drag exit
+                    AttemptDropExit(dragCancelEvent);
+                }
+            }
+            else Reset();
+        }
+
+        internal void OnDragCancelComplete(DragCancelEvent dragCancelEvent)
+        {
             Reset();
         }
+        
+        private void AttemptDropExit<T>(MouseEventBase<T> e) where T : MouseEventBase<T>, new() 
+        {
+            if (m_PreviousDropTarget != null)
+            {
+                using (DropExitEvent dropExitEvent = DropExitEvent.GetPooled())
+                {
+                    // Set parent
+                    dropExitEvent.ParentManipulator = this;
+                
+                    // Set target
+                    dropExitEvent.target = m_PreviousDropTarget;
+                    
+                    // Send event
+                    target.SendEvent(dropExitEvent);
+                } 
+            }
+        }
+        
+        internal void OnDropExitComplete(DropExitEvent dropExitEvent) { }
 
         private void OnMouseCaptureOutEvent(MouseCaptureOutEvent e)
         {
@@ -251,145 +299,152 @@ namespace GraphViewPlayer
             // Notify the draggable 
             CancelDrag(e);
         }
+
+        internal void SetUserData(object userData) => m_UserData = userData;
+        internal object GetUserData() => m_UserData;
+        internal void SetDraggedElement(VisualElement element) => m_Dragged = element;
+        internal VisualElement GetDraggedElement() => m_Dragged;
         #endregion
 
         #region Helpers
-        private T PickFirstOfType<T>(Vector2 position, params VisualElement[] exclude) where T : class
+        private VisualElement PickFirstExcluding(Vector2 position, params VisualElement[] exclude)
         {
             target.panel.PickAll(position, m_PickList);
             if (m_PickList.Count == 0) { return null; }
-            T toFind = null;
-            foreach (VisualElement visualElement in m_PickList)
+            VisualElement toFind = null;
+            for (int i = 0; i < m_PickList.Count; i++)
             {
-                if (exclude.Length > 0 && Array.IndexOf(exclude, visualElement) == -1) { continue; }
-                if (visualElement is T found)
-                {
-                    toFind = found;
-                    break;
-                }
+                VisualElement visualElement = m_PickList[i];
+                if (exclude.Length > 0 && Array.IndexOf(exclude, visualElement) != -1) { continue; }
+                toFind = visualElement;
+                break;
             }
             m_PickList.Clear();
             return toFind;
-        }
-
-        private void CancelDrag(EventBase e)
-        {
-            // Only need to notify if we breached the drag threshold so they can reset
-            if (m_BreachedDragThreshold)
-            {
-                m_Draggable.OnDragCancel(m_CurrentDragContext);
-                CheckForDragExit();
-            }
-            Reset();
-            e.StopImmediatePropagation();
-        }
-
-        private void CancelDrag<T>(MouseEventBase<T> e) where T : MouseEventBase<T>, new()
-        {
-            // Only need to notify if we breached the drag threshold so they can reset
-            Debug.Log($"Starting cancel {m_BreachedDragThreshold}");
-            if (m_BreachedDragThreshold)
-            {
-                m_CurrentDragContext.MouseButton = (MouseButton)e.button;
-                m_CurrentDragContext.MouseModifiers = e.modifiers;
-                m_CurrentDragContext.MousePosition = e.mousePosition;
-                m_Draggable.OnDragCancel(m_CurrentDragContext);
-                CheckForDragExit();
-            }
-            Reset();
-            e.StopImmediatePropagation();
-        }
-
-        private void CheckForDragExit()
-        {
-            if (m_CurrentDragContext.Droppable != null)
-            {
-                m_CurrentDragContext.Droppable.OnDropExit(m_CurrentDragContext);
-                m_CurrentDragContext.Droppable = null;
-            }
-        }
+        } 
 
         private void Reset()
         {
-            if (m_CurrentDragContext != null)
-            {
-                DragAndDropContext.ReleaseFromPool(m_CurrentDragContext);
-                m_CurrentDragContext = null;
-            }
+            m_Dragged = null;
+            m_UserData = null;
             m_MouseDown = false;
+            m_MouseOrigin = Vector2.zero;
+            m_DragThreshold = 0;
+            m_PreviousDropTarget = null;
             m_BreachedDragThreshold = false;
-            m_Draggable = null;
+            m_PreviousMousePosition = Vector2.zero;
             target.ReleaseMouse();
-            m_PickList.Clear();
         }
         #endregion
     }
-
-    #region Context Interfaces
-    public interface IDragAndDropContext
+    
+    #region Events
+    public abstract class DragAndDropEvent<T> : MouseEventBase<T> where T : DragAndDropEvent<T>, new()
     {
-        public IDraggable Draggable { get; }
-        public Vector2 MouseOrigin { get; }
-        public Vector2 MousePosition { get; }
-        public Vector2 MousePositionPrevious { get; }
-        public Vector2 MouseDelta { get; }
-        public Vector2 MouseResetDelta { get; }
-        public MouseButton MouseButton { get; }
-        public EventModifiers MouseModifiers { get; }
-        public object GetUserData();
-        public bool IsCancelled();
-        public void CancelDrag();
+        protected int m_DragThreshold;
+        protected bool m_Cancelled;
+        protected Vector2 m_DeltaToOrigin;
+        internal DragAndDropManipulator ParentManipulator { get; set; }
+        internal VisualElement GetDraggedElement() => ParentManipulator.GetDraggedElement(); 
+        internal int GetDragThreshold() => m_DragThreshold;
+        internal void SetMouseDelta(Vector2 delta) => mouseDelta = delta;
+        public bool IsCancelled() => m_Cancelled;
+        public void CancelDrag() => m_Cancelled = true;
+        public object GetUserData() => ParentManipulator.GetUserData();
+
+        public Vector2 DeltaToDragOrigin
+        {
+            get => m_DeltaToOrigin;
+            internal set => m_DeltaToOrigin = value;
+        } 
+
+        protected override void Init()
+        {
+            base.Init();
+            m_DeltaToOrigin = Vector2.zero;
+            m_DragThreshold = 0;
+            m_Cancelled = false;
+        }
+    }
+    
+    public abstract class DragEventBase<T> : DragAndDropEvent<T> where T : DragEventBase<T>, new()
+    {
+        public void SetUserData(object data) => ParentManipulator.SetUserData(data);
     }
 
-    public interface IBaseDragContext : IDragAndDropContext
+    public class DragBeginEvent : DragEventBase<DragBeginEvent>
     {
-        public void SetUserData(object userData);
+        public void SetDragThreshold(int threshold) => m_DragThreshold = threshold;
+
+        public void AcceptDrag(VisualElement draggedElement)
+        {
+            ParentManipulator.SetDraggedElement(draggedElement);
+        }
+        
+        protected override void PostDispatch(IPanel panel)
+        {
+            base.PostDispatch(panel);
+            ParentManipulator.OnDragBeginComplete(this);
+        }
     }
 
-    public interface IDragContext : IBaseDragContext
+    public class DragEvent : DragEventBase<DragEvent>
     {
+        public void ReplaceDrag(VisualElement draggedElement)
+        {
+            ParentManipulator.SetDraggedElement(draggedElement);
+        }
+        
+        protected override void PostDispatch(IPanel panel)
+        {
+            base.PostDispatch(panel);
+            ParentManipulator.OnDragComplete(this);
+        }
     }
 
-    public interface IDragBeginContext : IBaseDragContext
+    public class DragEndEvent : DragEventBase<DragEndEvent>
     {
-        public void SetDragThreshold(int threshold);
+        protected override void PostDispatch(IPanel panel)
+        {
+            base.PostDispatch(panel);
+            ParentManipulator.OnDragEndComplete(this);
+        }
     }
 
-    public interface IDragEndContext : IBaseDragContext
+    public class DragCancelEvent : DragEventBase<DragCancelEvent>
     {
+        protected override void PostDispatch(IPanel panel)
+        {
+            base.PostDispatch(panel);
+            ParentManipulator.OnDragCancelComplete(this);
+        }
     }
 
-    public interface IDragCancelContext : IBaseDragContext
+    public class DropEnterEvent : DragAndDropEvent<DropEnterEvent>
     {
+        protected override void PostDispatch(IPanel panel)
+        {
+            base.PostDispatch(panel);
+            ParentManipulator.OnDropEnterComplete(this);
+        }
     }
 
-    public interface IDropEnterContext : IDragAndDropContext
+    public class DropEvent : DragAndDropEvent<DropEvent>
     {
+        protected override void PostDispatch(IPanel panel)
+        {
+            base.PostDispatch(panel);
+            ParentManipulator.OnDropComplete(this);
+        }
     }
 
-    public interface IDropContext : IDragAndDropContext
+    public class DropExitEvent : DragAndDropEvent<DropExitEvent>
     {
-    }
-
-    public interface IDropExitContext : IDragAndDropContext
-    {
-    }
-    #endregion
-
-    #region IDraggable and IDroppable
-    public interface IDraggable
-    {
-        void OnDragBegin(IDragBeginContext context);
-        void OnDrag(IDragContext context);
-        void OnDragEnd(IDragEndContext context);
-        void OnDragCancel(IDragCancelContext context);
-    }
-
-    public interface IDroppable
-    {
-        void OnDropEnter(IDropEnterContext context);
-        void OnDrop(IDropContext context);
-        void OnDropExit(IDropExitContext context);
+        protected override void PostDispatch(IPanel panel)
+        {
+            base.PostDispatch(panel);
+            ParentManipulator.OnDropExitComplete(this);
+        }
     }
     #endregion
 }

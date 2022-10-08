@@ -9,7 +9,7 @@ using UnityEngine.UIElements;
 
 namespace GraphViewPlayer
 {
-    public abstract class BaseEdge : GraphElement, IDraggable
+    public abstract class BaseEdge : GraphElement
     {
         protected BasePort m_InputPort;
         private Vector2 m_InputPortPosition;
@@ -20,6 +20,8 @@ namespace GraphViewPlayer
         private Vector2 m_OutputPortPosition;
         protected bool m_OutputPositionOverridden;
         protected Vector2 m_OutputPositionOverride;
+        
+        internal List<BaseEdge> DraggedEdges { get; }
 
         public BaseEdge()
         {
@@ -237,36 +239,40 @@ namespace GraphViewPlayer
         }
         #endregion
 
-        #region IDraggable
-        internal List<BaseEdge> DraggedEdges { get; }
-
-        public void OnDragBegin(IDragBeginContext context)
+        #region Drag Events
+        [EventInterest(typeof(DragBeginEvent), typeof(DragEvent), typeof(DragEndEvent), typeof(DragCancelEvent))]
+        protected override void ExecuteDefaultActionAtTarget(EventBase evt)
         {
-            // Check if we need to cancel
-            if (context.IsCancelled()) { return; }
-            if (Graph == null || !IsMovable() || !CanStartManipulation(context.MouseButton, context.MouseModifiers))
-            {
-                context.CancelDrag();
-                return;
-            }
-
+            base.ExecuteDefaultActionAtTarget(evt);
+            if (evt.eventTypeId == DragBeginEvent.TypeId()) OnDragBegin((DragBeginEvent)evt);
+            else if (evt.eventTypeId == DragEvent.TypeId()) OnDrag((DragEvent)evt);
+            else if (evt.eventTypeId == DragEndEvent.TypeId()) OnDragEnd((DragEndEvent)evt);
+            else if (evt.eventTypeId == DragCancelEvent.TypeId()) OnDragCancel((DragCancelEvent)evt);
+        }
+        
+        private void OnDragBegin(DragBeginEvent e)
+        {
+            // Check if this is a edge drag event 
+            if (!IsEdgeDrag(e) || !IsMovable()) return;
+            
+            // Swallow event
+            e.StopImmediatePropagation();
+            
+            // Accept Drag
+            e.AcceptDrag(this);
+            
             // Set Drag Threshold
-            context.SetDragThreshold(10);
+            e.SetDragThreshold(10);
         }
 
-        public void OnDrag(IDragContext context)
+        private void OnDrag(DragEvent e)
         {
-            // Check if we need to cancel
-            if (context.IsCancelled()) { return; }
-            if (Graph == null || !IsMovable())
-            {
-                context.CancelDrag();
-                return;
-            }
+            // Swallow event
+            e.StopImmediatePropagation();
 
             // This is the first time we breached the drag threshold
             BasePort anchoredPort;
-            bool isDragStart = context.GetUserData() == null;
+            bool isDragStart = e.GetUserData() == null;
             if (isDragStart)
             {
                 // Record detached port (whichever is closest to the mouse)
@@ -276,8 +282,8 @@ namespace GraphViewPlayer
                 {
                     Vector2 inputPos = Input.GetGlobalCenter();
                     Vector2 outputPos = Output.GetGlobalCenter();
-                    float distanceFromInput = (context.MousePosition - inputPos).sqrMagnitude;
-                    float distanceFromOutput = (context.MousePosition - outputPos).sqrMagnitude;
+                    float distanceFromInput = (e.mousePosition - inputPos).sqrMagnitude;
+                    float distanceFromOutput = (e.mousePosition - outputPos).sqrMagnitude;
                     anchoredPort = distanceFromInput < distanceFromOutput ? Output : Input;
                 }
 
@@ -285,15 +291,14 @@ namespace GraphViewPlayer
                 CollectDraggedEdges(Input == anchoredPort ? Output : Input);
 
                 // Set user data
-                context.SetUserData(this);
+                e.SetUserData(this);
 
                 // Track for panning
                 Graph.TrackElementForPan(this);
             }
             else { anchoredPort = IsInputPositionOverriden() ? Output : Input; }
 
-            // Vector2 newPosition = GetOutputPositionOverride() + context.MouseDelta / Graph.CurrentScale; 
-            Vector2 newPosition = Graph.ContentContainer.WorldToLocal(context.MousePosition);
+            Vector2 newPosition = Graph.ContentContainer.WorldToLocal(e.mousePosition);
             for (int i = 0; i < DraggedEdges.Count; i++)
             {
                 BaseEdge draggedEdge = DraggedEdges[i];
@@ -305,36 +310,22 @@ namespace GraphViewPlayer
             if (isDragStart) { Graph.IlluminateCompatiblePorts(Input == anchoredPort ? Input : Output); }
         }
 
-        public void OnDragEnd(IDragEndContext context)
+        private void OnDragEnd(DragEndEvent e)
         {
             // Clear dragged edges
-            DraggedEdges.Clear();
+            DraggedEdges.Clear(); // TODO - this is a leak cause it's never called when this element is deleted during a drag
 
             // Could have been deleted
             if (Graph == null) { return; }
 
-            // // Untrack for panning
-            // Graph.UntrackElementForPan(this);
-            //
-            // // Reset position
-            // // TODO - is this really required?
-            // foreach (BaseEdge edge in Graph.EdgesSelected)
-            // {
-            //     edge.ResetLayer();
-            //     edge.UnsetPositionOverrides();
-            // }
-
             // Reset ports
-            Graph.IlluminateAllPorts();
+            Graph?.IlluminateAllPorts();
         }
 
-        public void OnDragCancel(IDragCancelContext context)
+        private void OnDragCancel(DragCancelEvent e)
         {
             // Reset position
-            // GraphView graph = Graph;
             bool highlightsReset = false;
-            // if (graph != null) 
-                // graph.IlluminateAllPorts();
             for (int i = 0; i < DraggedEdges.Count; i++)
             {
                 BaseEdge edge = DraggedEdges[i];
@@ -367,14 +358,14 @@ namespace GraphViewPlayer
             // Reset ports
             Graph.IlluminateAllPorts();
         }
-        
-        protected virtual bool CanStartManipulation(MouseButton mouseButton, EventModifiers mouseModifiers)
-        {
-            if (mouseButton != MouseButton.LeftMouse) { return false; }
-            if (mouseModifiers.IsNone()) { return true; }
-            return false;
-        }
 
+        private bool IsEdgeDrag<T>(DragAndDropEvent<T> e) where T : DragAndDropEvent<T>, new()
+        {
+            if ((MouseButton)e.button != MouseButton.LeftMouse) return false;
+            if (!e.modifiers.IsNone()) return false;
+            return true;
+        }
+        
         private void CollectDraggedEdges(BasePort draggedPort)
         {
             // Grab dragged edges

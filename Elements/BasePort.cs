@@ -9,7 +9,7 @@ using UnityEngine.UIElements;
 
 namespace GraphViewPlayer
 {
-    public class BasePort : VisualElement, IDraggable, IDroppable, IPositionable
+    public class BasePort : VisualElement, IPositionable
     {
         private static readonly CustomStyleProperty<Color> s_PortColorProperty = new("--port-color");
         private static readonly CustomStyleProperty<Color> s_DisabledPortColorProperty = new("--disabled-port-color");
@@ -277,33 +277,49 @@ namespace GraphViewPlayer
         }
         #endregion
 
-        #region IDraggable
-        public void OnDragBegin(IDragBeginContext context)
+        #region Event Handlers 
+        [EventInterest(typeof(DragBeginEvent), typeof(DragEvent), typeof(DragEndEvent), typeof(DragCancelEvent), 
+            typeof(DropEnterEvent), typeof(DropEvent), typeof(DropExitEvent))]
+        protected override void ExecuteDefaultActionAtTarget(EventBase evt)
         {
-            // Cancel checks 
-            if (context.IsCancelled() || !CanConnectToMore()) { return; }
-            if (ParentNode == null)
-            {
-                context.CancelDrag();
-                return;
-            }
-
-            // Set threshold
-            context.SetDragThreshold(10);
+            base.ExecuteDefaultActionAtTarget(evt);
+            if (evt.eventTypeId == DragBeginEvent.TypeId()) OnDragBegin((DragBeginEvent)evt);
+            else if (evt.eventTypeId == DragEvent.TypeId()) OnDrag((DragEvent)evt);
+            else if (evt.eventTypeId == DropEnterEvent.TypeId()) OnDropEnter((DropEnterEvent)evt);
+            else if (evt.eventTypeId == DropEvent.TypeId()) OnDrop((DropEvent)evt);
+            else if (evt.eventTypeId == DropExitEvent.TypeId()) OnDropExit((DropExitEvent)evt);
         }
 
-        public void OnDrag(IDragContext context)
+        private void OnDragBegin(DragBeginEvent e)
         {
-            // Cancel checks 
-            if (context.IsCancelled()) { return; }
-            if (ParentNode == null || !CanConnectToMore())
+            // Check if this is a port drag event 
+            if (!IsPortDrag(e) || !CanConnectToMore()) return;
+            
+            // Swallow event
+            e.StopImmediatePropagation();
+            
+            // Accept Drag
+            e.AcceptDrag(this);
+            
+            // Set threshold
+            e.SetDragThreshold(10); 
+        }
+
+        private void OnDrag(DragEvent e)
+        {
+            // Swallow event
+            e.StopImmediatePropagation();
+
+            // Other connections could have been made since drag start
+            // (assuming the graph is edited atomically, but in tandem)
+            if (!CanConnectToMore())
             {
-                context.CancelDrag();
+                e.CancelDrag(); 
                 return;
             }
-
+            
             // Check if this is the drag start
-            BaseEdge draggedEdge = context.GetUserData() as BaseEdge;
+            BaseEdge draggedEdge = e.GetUserData() as BaseEdge;
             if (draggedEdge == null)
             {
                 // Create edge
@@ -313,28 +329,16 @@ namespace GraphViewPlayer
             }
 
             // Drag
-            draggedEdge.OnDrag(context);
+            e.ReplaceDrag(draggedEdge);
         }
 
-        public void OnDragEnd(IDragEndContext context)
+        private void OnDropEnter(DropEnterEvent e)
         {
-            if (context.GetUserData() is BaseEdge edge) { edge.OnDragEnd(context); }
-        }
-
-        public void OnDragCancel(IDragCancelContext context)
-        {
-            if (context.GetUserData() is BaseEdge edge)
+            if (e.GetUserData() is BaseEdge draggedEdge)
             {
-                edge.OnDragCancel(context);
-            }
-        }
-        #endregion
-
-        #region IDroppable
-        public void OnDropEnter(IDropEnterContext context)
-        {
-            if (context.GetUserData() is BaseEdge draggedEdge)
-            {
+                // Swallow event
+                e.StopImmediatePropagation();
+                
                 // Grab dragged port
                 BasePort anchoredPort = draggedEdge.IsInputPositionOverriden() ? draggedEdge.Output : draggedEdge.Input;
 
@@ -343,30 +347,32 @@ namespace GraphViewPlayer
 
                 // Hover state
                 m_ConnectorBoxCap.style.backgroundColor = PortColor;
-            }
+            } 
         }
 
-        public void OnDrop(IDropContext context)
+        private void OnDrop(DropEvent e)
         {
-            // See if we can form a connection 
-            if (context.GetUserData() is BaseEdge draggedEdge)
+            if (e.GetUserData() is BaseEdge draggedEdge)
             {
+                // Swallow event
+                e.StopImmediatePropagation();
+                
                 for (int i = 0; i < draggedEdge.DraggedEdges.Count; i++)
                 {
                     // Grab dragged edge and the corresponding anchored port
                     BaseEdge edge = draggedEdge.DraggedEdges[i];
                     BasePort anchoredPort = edge.IsInputPositionOverriden() ? edge.Output : edge.Input;
-                    ConnectToPortWithEdge(context, anchoredPort, edge);
+                    ConnectToPortWithEdge(e, anchoredPort, edge);
                 }
 
                 // Update caps
                 UpdateCapColor();
-            }
+            } 
         }
 
-        public void OnDropExit(IDropExitContext context)
+        private void OnDropExit(DropExitEvent e)
         {
-            if (context.GetUserData() is BaseEdge draggedEdge)
+            if (e.GetUserData() is BaseEdge draggedEdge)
             {
                 // Grab dragged port
                 BasePort anchoredPort = draggedEdge.IsInputPositionOverriden() ? draggedEdge.Output : draggedEdge.Input;
@@ -378,14 +384,21 @@ namespace GraphViewPlayer
                 UpdateCapColor();
             }
         }
-
-        private void ConnectToPortWithEdge(IDropContext context, BasePort anchoredPort, BaseEdge draggedEdge)
+        
+        private bool IsPortDrag<T>(DragAndDropEvent<T> e) where T : DragAndDropEvent<T>, new()
+        {
+            if ((MouseButton)e.button != MouseButton.LeftMouse) { return false; }
+            if (!e.modifiers.IsNone()) { return false; }
+            return true; 
+        }
+        
+        private void ConnectToPortWithEdge(DropEvent e, BasePort anchoredPort, BaseEdge draggedEdge)
         {
             // Cancel invalid drags or already extant edges  
             if (!CanConnectTo(anchoredPort))
             {
                 // Real edges will be returned to their former state
-                context.CancelDrag();
+                e.CancelDrag();
                 return;
             }
 
@@ -408,7 +421,7 @@ namespace GraphViewPlayer
             {
                 if (draggedEdge.Input == inputPort && draggedEdge.Output == outputPort)
                 {
-                    context.CancelDrag();
+                    e.CancelDrag();
                     return;
                 }
                 ParentNode.Graph.OnEdgeDelete(draggedEdge);

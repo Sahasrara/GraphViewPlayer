@@ -7,7 +7,7 @@ using UnityEngine.UIElements;
 
 namespace GraphViewPlayer
 {
-    public class Node : GraphElement, IDraggable
+    public class Node : GraphElement
     {
         public Node()
         {
@@ -94,59 +94,70 @@ namespace GraphViewPlayer
         }
         #endregion
 
-        #region IDraggable
-        public void OnDragBegin(IDragBeginContext context)
+        #region Drag Events
+        [EventInterest(typeof(DragBeginEvent), typeof(DragEvent), typeof(DragEndEvent), typeof(DragCancelEvent))]
+        protected override void ExecuteDefaultActionAtTarget(EventBase evt)
         {
-            // Cancel checks 
-            if (context.IsCancelled()) { return; }
-            if (Graph == null || !IsMovable() || !CanStartManipulation(context.MouseButton, context.MouseModifiers))
-            {
-                context.CancelDrag();
-                return;
-            }
-
+            base.ExecuteDefaultActionAtTarget(evt);
+            if (evt.eventTypeId == DragBeginEvent.TypeId()) OnDragBegin((DragBeginEvent)evt);
+            else if (evt.eventTypeId == DragEvent.TypeId()) OnDrag((DragEvent)evt);
+            else if (evt.eventTypeId == DragEndEvent.TypeId()) OnDragEnd((DragEndEvent)evt);
+            else if (evt.eventTypeId == DragCancelEvent.TypeId()) OnDragCancel((DragCancelEvent)evt);
+        }
+        
+        private void OnDragBegin(DragBeginEvent e)
+        {
+            // Check if this is a node drag event 
+            if (!IsNodeDrag(e) || !IsMovable()) return;
+            e.StopImmediatePropagation();
+            
+            // Accept Drag
+            e.AcceptDrag(this);
+            
             // Track for panning
-            Graph.TrackElementForPan(this);
+            Graph.TrackElementForPan(this); 
         }
 
-        public void OnDrag(IDragContext context)
+        private void OnDrag(DragEvent e)
         {
-            // Cancel checks 
-            if (context.IsCancelled()) { return; }
-            if (Graph == null || !IsMovable())
-            {
-                context.CancelDrag();
-                return;
-            }
-
+            // Swallow event
+            e.StopImmediatePropagation();
+            
             // Handle drag
+            e.StopImmediatePropagation();
             foreach (Node node in Graph.NodesSelected)
             {
-                node.SetPosition(node.GetPosition() + context.MouseDelta / Graph.CurrentScale);
+                node.SetPosition(node.GetPosition() + e.mouseDelta / Graph.CurrentScale);
                 Graph.OnNodeMoved(node);
             }
         }
 
-        public void OnDragEnd(IDragEndContext context)
+        private void OnDragEnd(DragEndEvent e)
         {
+            // Swallow event
+            e.StopImmediatePropagation();
+            
             // Untrack for panning
             Graph.UntrackElementForPan(this);
         }
 
-        public void OnDragCancel(IDragCancelContext context)
+        private void OnDragCancel(DragCancelEvent e)
         {
+            // Swallow event
+            e.StopImmediatePropagation();
+            
             // Untrack for panning
-            Vector2 totalDiff = (context.MouseResetDelta - Graph.UntrackElementForPan(this, true)) / Graph.CurrentScale;
+            Vector2 totalDiff = (e.DeltaToDragOrigin - Graph.UntrackElementForPan(this, true)) / Graph.CurrentScale;
 
             // Reset position
-            foreach (Node node in Graph.NodesSelected) { node.SetPosition(node.GetPosition() + totalDiff); }
+            foreach (Node node in Graph.NodesSelected) { node.SetPosition(node.GetPosition() + totalDiff); } 
         }
-        
-        protected virtual bool CanStartManipulation(MouseButton mouseButton, EventModifiers mouseModifiers)
+
+        private bool IsNodeDrag<T>(DragAndDropEvent<T> e) where T : DragAndDropEvent<T>, new()
         {
-            if (mouseButton != MouseButton.LeftMouse) { return false; }
-            if (mouseModifiers.IsNone()) { return true; }
-            return false;
+            if ((MouseButton)e.button != MouseButton.LeftMouse) return false;
+            if (!e.modifiers.IsNone()) return false;
+            return true;
         }
         #endregion
     }

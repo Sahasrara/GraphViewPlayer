@@ -52,12 +52,6 @@ namespace GraphViewPlayer
             hierarchy.Add(GraphViewContainer);
 
             //
-            // Rectangular Selection and Droppable Backstop
-            //
-            Backstop = new(this);
-            GraphViewContainer.Add(Backstop);
-
-            //
             // Content Container - Level 2
             //
             // Content Container
@@ -85,6 +79,9 @@ namespace GraphViewPlayer
 
             // Layers
             m_ContainerLayers = new();
+            
+            // Create Marquee 
+            m_Marquee = new();
 
             // Panning
             m_PanSchedule = schedule
@@ -98,6 +95,7 @@ namespace GraphViewPlayer
         }
         #endregion
 
+        #region Properties
         private static StyleSheet DefaultStyle
         {
             get
@@ -109,11 +107,9 @@ namespace GraphViewPlayer
                 return s_DefaultStyle;
             }
         }
-
-        #region Properties
+        
         internal ViewTransformChanged OnViewTransformChanged { get; set; }
 
-        private GraphViewBackstop Backstop { get; }
         private VisualElement GraphViewContainer { get; }
         public VisualElement ContentContainer { get; }
         public ITransform ViewTransform => ContentContainer.transform;
@@ -360,6 +356,178 @@ namespace GraphViewPlayer
 
         private bool WhereSelected(ISelectable selectable) => selectable.Selected;
         private bool WhereUnselected(ISelectable selectable) => !selectable.Selected;
+        #endregion
+
+        #region Event Handlers
+        private bool m_DraggingView;
+        private bool m_DraggingMarquee;
+        private readonly Marquee m_Marquee;
+        
+        [EventInterest(typeof(DragBeginEvent), typeof(DragEvent), typeof(DragEndEvent), typeof(DragCancelEvent), 
+            typeof(DropEnterEvent), typeof(DropEvent), typeof(DropExitEvent))]
+        protected override void ExecuteDefaultActionAtTarget(EventBase evt)
+        {
+            base.ExecuteDefaultActionAtTarget(evt);
+            if (evt.eventTypeId == DragBeginEvent.TypeId()) OnDragBegin((DragBeginEvent)evt);
+            else if (evt.eventTypeId == DragEvent.TypeId()) OnDrag((DragEvent)evt);
+            else if (evt.eventTypeId == DragEndEvent.TypeId()) OnDragEnd((DragEndEvent)evt);
+            else if (evt.eventTypeId == DragCancelEvent.TypeId()) OnDragCancel((DragCancelEvent)evt);
+            else if (evt.eventTypeId == DropEnterEvent.TypeId()) OnDropEnter((DropEnterEvent)evt);
+            else if (evt.eventTypeId == DropEvent.TypeId()) OnDrop((DropEvent)evt);
+            else if (evt.eventTypeId == DropExitEvent.TypeId()) OnDropExit((DropExitEvent)evt);
+        }
+        
+        private void OnDragBegin(DragBeginEvent e)
+        {
+            if (IsViewDrag(e))
+            {
+                // Accept Drag
+                e.AcceptDrag(this);
+                e.StopImmediatePropagation();
+                m_DraggingView = true;
+            }
+            else if (IsMarqueeDrag(e))
+            {
+                // Accept Drag
+                e.AcceptDrag(this);
+                e.StopImmediatePropagation();
+                m_DraggingMarquee = true;
+                
+                // Clear selection if this is an exclusive select 
+                bool additive = e.modifiers.IsShift();
+                bool subtractive = e.modifiers.IsActionKey();
+                bool exclusive = !(additive ^ subtractive);
+                if (exclusive) { ClearSelection(); }
+                
+                // Create marquee
+                Add(m_Marquee);
+                Vector2 position = this.WorldToLocal(e.mousePosition);
+                m_Marquee.Coordinates = new()
+                {
+                    start = position,
+                    end = position
+                };
+            }
+        }
+
+        private void OnDrag(DragEvent e)
+        {
+            if (m_DraggingMarquee)
+            {
+                e.StopImmediatePropagation();
+                // TODO - MouseMoveEvent doesn't correctly report mouse button so I don't check IsMarqueeDrag 
+                m_Marquee.End = this.WorldToLocal(e.mousePosition);
+            }
+            else if (m_DraggingView)
+            {
+                e.StopImmediatePropagation();
+                // TODO - MouseMoveEvent doesn't correctly report mouse button so I don't check IsViewDrag 
+                UpdateViewTransform(ViewTransform.position + (Vector3)e.mouseDelta);
+            }
+        }
+
+        private void OnDragEnd(DragEndEvent e)
+        {
+            if (m_DraggingMarquee)
+            {
+                // Remove marquee
+                e.StopImmediatePropagation();
+                m_Marquee.RemoveFromHierarchy();
+                
+                // Ignore if the rectangle is infinitely small
+                Rect selectionRect = m_Marquee.SelectionRect;
+                if (selectionRect.size == Vector2.zero) { return; }
+                
+                // Select elements that overlap the marquee
+                bool additive = e.modifiers.IsShift();
+                bool subtractive = e.modifiers.IsActionKey();
+                bool exclusive = !(additive ^ subtractive);
+                foreach (GraphElement element in ElementsAll)
+                {
+                    Rect localSelRect = this.ChangeCoordinatesTo(element, selectionRect);
+                    if (element.Overlaps(localSelRect)) { element.Selected = exclusive || additive; }
+                    else if (exclusive) { element.Selected = false; }
+                }
+                m_DraggingMarquee = false;
+            }
+            else if (m_DraggingView)
+            {
+                e.StopImmediatePropagation();
+                m_DraggingView = false;
+            } 
+        }
+
+        private void OnDragCancel(DragCancelEvent e)
+        {
+            if (m_DraggingMarquee)
+            {
+                e.StopImmediatePropagation();
+                m_Marquee.RemoveFromHierarchy();
+                m_DraggingMarquee = false;
+            }
+            else if (m_DraggingView)
+            {
+                e.StopImmediatePropagation();
+                UpdateViewTransform(ViewTransform.position + Vector3.Scale(e.mouseDelta, ViewTransform.scale)); 
+                m_DraggingView = false;
+            }  
+        }
+
+        private void OnDropEnter(DropEnterEvent e)
+        {
+            if (e.GetUserData() is BaseEdge draggedEdge)
+            {
+                e.StopImmediatePropagation();
+            }
+        }
+
+        private void OnDrop(DropEvent e)
+        {
+            Debug.Log($"on drop 1 {e.GetUserData()} - {e}");
+            if (e.GetUserData() is BaseEdge draggedEdge)
+            {
+                e.StopImmediatePropagation();
+                Debug.Log($"on drop 2 - {draggedEdge.DraggedEdges.Count}");
+                for (int i = 0; i < draggedEdge.DraggedEdges.Count; i++)
+                {
+                    // Grab dragged edge and the corresponding anchored port
+                    BaseEdge edge = draggedEdge.DraggedEdges[i];
+
+                    // Delete real edge
+                    if (edge.IsRealEdge()) { OnEdgeDelete(edge); }
+
+                    // Delete candidate edge
+                    else { RemoveElement(edge); }
+                }
+
+                // Reset port highlights
+                IlluminateAllPorts();
+            } 
+        }
+
+        private void OnDropExit(DropExitEvent e)
+        {
+            if (e.GetUserData() is BaseEdge draggedEdge)
+            {
+                e.StopImmediatePropagation();
+            }
+        }
+
+        private bool IsMarqueeDrag<T>(DragAndDropEvent<T> e) where T : DragAndDropEvent<T>, new()
+        {
+            if ((MouseButton)e.button != MouseButton.LeftMouse) { return false; }
+            if (e.modifiers.IsNone()) { return true; }
+            if (e.modifiers.IsExclusiveShift()) { return true; }
+            if (e.modifiers.IsExclusiveActionKey()) { return true; }
+            return false; 
+        }
+        
+        private bool IsViewDrag<T>(DragAndDropEvent<T> e) where T : DragAndDropEvent<T>, new()
+        {
+            if ((MouseButton)e.button != MouseButton.MiddleMouse) return false;
+            if (!e.modifiers.IsNone()) return false;
+            return true;
+        }
         #endregion
 
         #region Keybinding

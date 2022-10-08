@@ -98,6 +98,7 @@ namespace GraphViewPlayer
 
             // Focus
             focusable = true;
+            Focus();
         }
         #endregion
 
@@ -384,6 +385,9 @@ namespace GraphViewPlayer
                 e.AcceptDrag(this);
                 e.StopImmediatePropagation();
                 m_DraggingView = true;
+
+                // Assume focus
+                Focus();
             }
             else if (IsMarqueeDrag(e))
             {
@@ -406,6 +410,9 @@ namespace GraphViewPlayer
                     start = position,
                     end = position
                 };
+
+                // Assume focus
+                Focus();
             }
         }
 
@@ -531,7 +538,7 @@ namespace GraphViewPlayer
         private static bool IsCommand(EventModifiers modifiers) => (modifiers & EventModifiers.Command) != 0;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private static bool IsShift(EventModifiers modifiers) => modifiers == EventModifiers.Shift;
+        private static bool IsShift(EventModifiers modifiers) => (modifiers & EventModifiers.Shift) != 0;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private static bool IsFunction(EventModifiers modifiers) => (modifiers & EventModifiers.FunctionKey) != 0;

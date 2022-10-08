@@ -259,8 +259,6 @@ namespace GraphViewPlayer
         #endregion
 
         #region Drag Events
-        private bool m_ArePortsLit;
-
         [EventInterest(typeof(DragOfferEvent), typeof(DragEvent), typeof(DragEndEvent), typeof(DragCancelEvent))]
         protected override void ExecuteDefaultActionAtTarget(EventBase evt)
         {
@@ -308,7 +306,7 @@ namespace GraphViewPlayer
                 draggedInput = distanceFromInput < distanceFromOutput;
             }
 
-            // TODO - Collect dragged edges and set their overrides (that's how we signal the drag right now - TODO)
+            // Collect dragged edges and set their overrides TODO: (that's how we signal the drag right now)
             if (draggedInput)
             {
                 CollectDraggedEdges(Input);
@@ -318,6 +316,7 @@ namespace GraphViewPlayer
                     edge.SetInputPositionOverride(edge.GetInputPositionOverride());
                     edge.pickingMode = PickingMode.Ignore;
                 }
+                Graph.IlluminateCompatiblePorts(Output);
             }
             else
             {
@@ -328,6 +327,7 @@ namespace GraphViewPlayer
                     edge.SetOutputPositionOverride(edge.GetOutputPositionOverride());
                     edge.pickingMode = PickingMode.Ignore;
                 }
+                Graph.IlluminateCompatiblePorts(Input);
             }
 
             // Set user data
@@ -335,9 +335,6 @@ namespace GraphViewPlayer
 
             // Track for panning
             Graph.TrackElementForPan(this);
-
-            // Flag to light ports
-            m_ArePortsLit = false;
         }
 
         private void OnDrag(DragEvent e)
@@ -353,13 +350,6 @@ namespace GraphViewPlayer
                 BaseEdge draggedEdge = DraggedEdges[i];
                 if (anchoredPort.Direction == Direction.Input) { draggedEdge.SetOutputPositionOverride(newPosition); }
                 else { draggedEdge.SetInputPositionOverride(newPosition); }
-            }
-
-            // Only light compatible anchors when dragging an edge, otherwise we can't tell if it's a candidate edge.
-            if (!m_ArePortsLit)
-            {
-                Graph.IlluminateCompatiblePorts(Input == anchoredPort ? Input : Output);
-                m_ArePortsLit = true;
             }
         }
 

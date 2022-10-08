@@ -35,8 +35,6 @@ namespace GraphViewPlayer
             // Style
             styleSheets.Add(DefaultStyle);
             AddToClassList("graph-view");
-
-            // Usage Hints
             usageHints = UsageHints.MaskContainer; // Should equate to RenderHints.ClipWithScissors
 
             // Manipulators
@@ -55,12 +53,7 @@ namespace GraphViewPlayer
             // Content Container - Level 2
             //
             // Content Container
-            ContentContainer = new ContentView
-            {
-                pickingMode = PickingMode.Ignore,
-                usageHints = UsageHints.GroupTransform
-            };
-            ContentContainer.AddToClassList("content-view-container");
+            ContentContainer = new ContentView();
             GraphViewContainer.Add(ContentContainer);
 
             //
@@ -862,6 +855,15 @@ namespace GraphViewPlayer
 
         private class ContentView : VisualElement
         {
+            public ContentView()
+            {
+                AddToClassList("content-view-container");
+                pickingMode = PickingMode.Ignore;
+                usageHints = UsageHints.GroupTransform;
+
+                // RegisterCallback<DragBeginEvent>();
+            }
+
             public override bool Overlaps(Rect r) => true;
         }
         #endregion

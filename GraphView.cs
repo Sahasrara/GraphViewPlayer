@@ -57,12 +57,6 @@ namespace GraphViewPlayer
             GraphViewContainer.Add(ContentContainer);
 
             //
-            // Selection - Level 3
-            //
-            // Selection = new(this);
-            // AddElement(Selection);
-
-            //
             // Other Initialization
             //
             // Cached Queries
@@ -110,7 +104,6 @@ namespace GraphViewPlayer
 
         internal ViewTransformChanged OnViewTransformChanged { get; set; }
 
-        private Selection Selection { get; }
         private VisualElement GraphViewContainer { get; }
         public VisualElement ContentContainer { get; }
         public ITransform ViewTransform => ContentContainer.transform;
@@ -490,7 +483,7 @@ namespace GraphViewPlayer
                     BaseEdge edge = draggedEdge.DraggedEdges[i];
 
                     // Delete real edge
-                    if (edge.IsRealEdge()) { OnEdgeDelete(edge); }
+                    if (edge.IsRealEdge()) { ExecuteEdgeDelete(edge); }
 
                     // Delete candidate edge
                     else { RemoveElement(edge); }
@@ -560,7 +553,7 @@ namespace GraphViewPlayer
                     {
                         if (IsCommandExclusive(evt.modifiers))
                         {
-                            OnCopy();
+                            ExecuteCopy();
                             evt.StopPropagation();
                         }
                     }
@@ -568,7 +561,7 @@ namespace GraphViewPlayer
                     {
                         if (IsControlExclusive(evt.modifiers))
                         {
-                            OnCopy();
+                            ExecuteCopy();
                             evt.StopPropagation();
                         }
                     }
@@ -578,7 +571,7 @@ namespace GraphViewPlayer
                     {
                         if (IsCommandExclusive(evt.modifiers))
                         {
-                            OnPaste();
+                            ExecutePaste();
                             evt.StopPropagation();
                         }
                     }
@@ -586,7 +579,7 @@ namespace GraphViewPlayer
                     {
                         if (IsControlExclusive(evt.modifiers))
                         {
-                            OnPaste();
+                            ExecutePaste();
                             evt.StopPropagation();
                         }
                     }
@@ -596,7 +589,7 @@ namespace GraphViewPlayer
                     {
                         if (IsCommandExclusive(evt.modifiers))
                         {
-                            OnCut();
+                            ExecuteCut();
                             evt.StopPropagation();
                         }
                     }
@@ -604,7 +597,7 @@ namespace GraphViewPlayer
                     {
                         if (IsControlExclusive(evt.modifiers))
                         {
-                            OnCut();
+                            ExecuteCut();
                             evt.StopPropagation();
                         }
                     }
@@ -614,7 +607,7 @@ namespace GraphViewPlayer
                     {
                         if (IsCommandExclusive(evt.modifiers))
                         {
-                            OnDuplicate();
+                            ExecuteDuplicate();
                             evt.StopPropagation();
                         }
                     }
@@ -622,7 +615,7 @@ namespace GraphViewPlayer
                     {
                         if (IsControlExclusive(evt.modifiers))
                         {
-                            OnDuplicate();
+                            ExecuteDuplicate();
                             evt.StopPropagation();
                         }
                     }
@@ -632,12 +625,12 @@ namespace GraphViewPlayer
                     {
                         if (IsCommandExclusive(evt.modifiers))
                         {
-                            OnUndo();
+                            ExecuteUndo();
                             evt.StopPropagation();
                         }
                         else if (IsShift(evt.modifiers) && IsCommand(evt.modifiers))
                         {
-                            OnRedo();
+                            ExecuteRedo();
                             evt.StopPropagation();
                         }
                     }
@@ -645,7 +638,7 @@ namespace GraphViewPlayer
                     {
                         if (IsControlExclusive(evt.modifiers))
                         {
-                            OnUndo();
+                            ExecuteUndo();
                             evt.StopPropagation();
                         }
                     }
@@ -653,7 +646,7 @@ namespace GraphViewPlayer
                 case KeyCode.Y:
                     if (!IsMac() && IsControlExclusive(evt.modifiers))
                     {
-                        OnRedo();
+                        ExecuteRedo();
                         evt.StopPropagation();
                     }
                     break;
@@ -662,7 +655,7 @@ namespace GraphViewPlayer
                     {
                         if (IsUnmodified(evt.modifiers))
                         {
-                            OnDelete();
+                            ExecuteDelete();
                             evt.StopPropagation();
                         }
                     }
@@ -670,7 +663,7 @@ namespace GraphViewPlayer
                     {
                         if (IsUnmodified(evt.modifiers))
                         {
-                            OnDelete();
+                            ExecuteDelete();
                             evt.StopPropagation();
                         }
                     }
@@ -678,7 +671,7 @@ namespace GraphViewPlayer
                 case KeyCode.Backspace:
                     if (IsMac() && IsCommand(evt.modifiers) && IsFunction(evt.modifiers))
                     {
-                        OnDelete();
+                        ExecuteDelete();
                         evt.StopPropagation();
                     }
                     break;
@@ -833,16 +826,16 @@ namespace GraphViewPlayer
         }
         #endregion
 
-        #region Command Handlers
-        protected internal abstract void OnCopy();
-        protected internal abstract void OnCut();
-        protected internal abstract void OnPaste();
-        protected internal abstract void OnDuplicate();
-        protected internal abstract void OnDelete();
-        protected internal abstract void OnUndo();
-        protected internal abstract void OnRedo();
-        protected internal abstract void OnEdgeCreate(BaseEdge edge);
-        protected internal abstract void OnEdgeDelete(BaseEdge edge);
+        #region Commands and Callbacks
+        protected internal abstract void ExecuteCopy();
+        protected internal abstract void ExecuteCut();
+        protected internal abstract void ExecutePaste();
+        protected internal abstract void ExecuteDuplicate();
+        protected internal abstract void ExecuteDelete();
+        protected internal abstract void ExecuteUndo();
+        protected internal abstract void ExecuteRedo();
+        protected internal abstract void ExecuteEdgeCreate(BaseEdge edge);
+        protected internal abstract void ExecuteEdgeDelete(BaseEdge edge);
         protected internal abstract void OnNodeMoved(Node node);
         protected internal abstract void OnViewportChanged();
         #endregion
@@ -860,8 +853,6 @@ namespace GraphViewPlayer
                 AddToClassList("content-view-container");
                 pickingMode = PickingMode.Ignore;
                 usageHints = UsageHints.GroupTransform;
-
-                // RegisterCallback<DragBeginEvent>();
             }
 
             public override bool Overlaps(Rect r) => true;

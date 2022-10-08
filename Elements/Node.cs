@@ -192,18 +192,5 @@ namespace GraphViewPlayer
             return true;
         }
         #endregion
-
-        #region Selection Drag
-        public override bool CanHandleSelectionDrag(DragOfferEvent e) => IsNodeDrag(e) && IsMovable();
-        public override void InitializeSelectionDrag(DragOfferEvent e) { }
-
-        public override void HandleSelectionDrag(DragEvent e)
-            => ApplyDeltaToPosition(e.mouseDelta / Graph.CurrentScale);
-
-        public override void HandleSelectionDragEnd(DragEndEvent e) { }
-
-        public override void HandleSelectionDragCancel(DragCancelEvent e, Vector2 panDiff)
-            => ApplyDeltaToPosition((e.DeltaToDragOrigin - panDiff) / Graph.CurrentScale);
-        #endregion
     }
 }

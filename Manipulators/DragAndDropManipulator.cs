@@ -62,7 +62,6 @@ namespace GraphViewPlayer
                 dragOfferEvent.SetMouseDelta(Vector2.zero);
                 
                 // Send event
-                Debug.Log("Sending drag offer");
                 target.SendEvent(dragOfferEvent);
             }
             
@@ -120,7 +119,6 @@ namespace GraphViewPlayer
                     dragBeginEvent.target = m_Dragged;
                     
                     // Send event
-                    Debug.Log("Sending drag begin");
                     target.SendEvent(dragBeginEvent); 
                 }
                 
@@ -145,7 +143,6 @@ namespace GraphViewPlayer
             } 
 
             // No cancellation, send drag event
-            Debug.Log("Sending first drag");
             SendDragEvent(dragBeginEvent);
         }
 
@@ -414,7 +411,6 @@ namespace GraphViewPlayer
 
         public void AcceptDrag(VisualElement draggedElement)
         {
-            Debug.Log("Drag accepted");
             ParentManipulator.SetDraggedElement(draggedElement);
         }
         

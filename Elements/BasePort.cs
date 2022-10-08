@@ -148,7 +148,7 @@ namespace GraphViewPlayer
 
         public BaseEdge ConnectTo(BasePort other)
         {
-            if (other == null) { throw new ArgumentNullException("Port.ConnectTo() other argument is null"); }
+            if (other == null) { throw new ArgumentNullException(nameof(other)); }
 
             if (other.Direction == Direction)
             {
@@ -196,13 +196,6 @@ namespace GraphViewPlayer
             }
             return false;
         }
-
-        // // TODO This is a workaround to avoid having a generic type for the port as generic types mess with USS.
-        // public static Port Create<TEdge>(Node parent, Orientation orientation, Direction direction,
-        //     PortCapacity capacity) where TEdge : BaseEdge, new()
-        // {
-        //     return new(parent, orientation, direction, capacity);
-        // }
 
         public bool SameDirection(BasePort other) => Direction == other.Direction;
 
@@ -404,7 +397,7 @@ namespace GraphViewPlayer
                     e.CancelDrag();
                     return;
                 }
-                ParentNode.Graph.OnEdgeDelete(draggedEdge);
+                ParentNode.Graph.ExecuteEdgeDelete(draggedEdge);
             }
 
             // This was a temporary edge, reset it and remove from the graph
@@ -414,7 +407,7 @@ namespace GraphViewPlayer
             draggedEdge.Input = inputPort;
             draggedEdge.Output = outputPort;
             draggedEdge.Selected = false;
-            ParentNode.Graph.OnEdgeCreate(draggedEdge);
+            ParentNode.Graph.ExecuteEdgeCreate(draggedEdge);
         }
         #endregion
     }

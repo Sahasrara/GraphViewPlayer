@@ -364,7 +364,7 @@ namespace GraphViewPlayer
 
             // Clear dragged edges
             DraggedEdges
-                .Clear(); // TODO - this is a leak cause it's never called when this element is deleted during a drag
+                .Clear(); // TODO - this is "leaky" because it's never called when this element is deleted during a drag
 
             // Could have been deleted
             if (Graph == null) { return; }
@@ -437,73 +437,6 @@ namespace GraphViewPlayer
                 }
             }
             else { DraggedEdges.Add(this); }
-        }
-        #endregion
-
-        #region Selection Drag
-        public override bool CanHandleSelectionDrag(DragOfferEvent e) => IsEdgeDrag(e) && IsMovable();
-        public override void InitializeSelectionDrag(DragOfferEvent e) => e.SetDragThreshold(10);
-
-        public override void HandleSelectionDrag(DragEvent e)
-        {
-            // This is the first time we breached the drag threshold
-            BasePort anchoredPort;
-            bool isDragStart = e.GetUserData() == null;
-            if (isDragStart)
-            {
-                // Record detached port (whichever is closest to the mouse)
-                if (Input == null) { anchoredPort = Output; }
-                else if (Output == null) { anchoredPort = Input; }
-                else
-                {
-                    Vector2 inputPos = Input.GetGlobalCenter();
-                    Vector2 outputPos = Output.GetGlobalCenter();
-                    float distanceFromInput = (e.mousePosition - inputPos).sqrMagnitude;
-                    float distanceFromOutput = (e.mousePosition - outputPos).sqrMagnitude;
-                    anchoredPort = distanceFromInput < distanceFromOutput ? Output : Input;
-                }
-
-                // Set user data
-                e.SetUserData(this);
-            }
-            else { anchoredPort = IsInputPositionOverriden() ? Output : Input; }
-
-            // Set position
-            Vector2 newPosition = Graph.ContentContainer.WorldToLocal(e.mousePosition);
-            if (anchoredPort.Direction == Direction.Input) { SetOutputPositionOverride(newPosition); }
-            else { SetInputPositionOverride(newPosition); }
-
-            // Only light compatible anchors when dragging an edge, otherwise we can't tell if it's a candidate edge.
-            if (isDragStart) { Graph.IlluminateCompatiblePorts(Input == anchoredPort ? Input : Output); }
-        }
-
-        public override void HandleSelectionDragEnd(DragEndEvent e)
-        {
-            // We only need to re-illuminate the ports once 
-            if (Graph != null && e.GetUserData() != null)
-            {
-                e.SetUserData(null);
-                Graph.IlluminateAllPorts();
-            }
-        }
-
-        public override void HandleSelectionDragCancel(DragCancelEvent e, Vector2 panDiff)
-        {
-            // We only need to re-illuminate the ports once 
-            if (Graph != null && e.GetUserData() != null)
-            {
-                e.SetUserData(null);
-                Graph.IlluminateAllPorts();
-            }
-
-            // Reset position
-            if (IsRealEdge())
-            {
-                ResetLayer();
-                UnsetPositionOverrides();
-                Selected = false;
-            }
-            else if (Graph != null) { Graph.RemoveElement(this); }
         }
         #endregion
     }

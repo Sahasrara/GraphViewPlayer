@@ -8,7 +8,7 @@ using UnityEngine.UIElements;
 
 namespace GraphViewPlayer
 {
-    public abstract class GraphElement : VisualElement, ISelectable, IPositionable, IDraggableSelection
+    public abstract class GraphElement : VisualElement, ISelectable, IPositionable
     {
         private static readonly CustomStyleProperty<int> s_LayerProperty = new("--layer");
         private GraphView m_GraphView;
@@ -145,19 +145,6 @@ namespace GraphViewPlayer
 
         public virtual bool IsSelectable() =>
             (Capabilities & Capabilities.Selectable) == Capabilities.Selectable && visible;
-        #endregion
-
-        
-        
-        
-        
-        
-        #region Selection Drag
-        public abstract bool CanHandleSelectionDrag(DragOfferEvent e);
-        public abstract void InitializeSelectionDrag(DragOfferEvent e);
-        public abstract void HandleSelectionDrag(DragEvent e);
-        public abstract void HandleSelectionDragEnd(DragEndEvent e);
-        public abstract void HandleSelectionDragCancel(DragCancelEvent e, Vector2 panDiff);
         #endregion
     }
 }

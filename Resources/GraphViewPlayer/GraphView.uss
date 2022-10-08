@@ -158,6 +158,12 @@
     opacity: 0.25;
 }
 
+.selection {
+    position: absolute;
+    width: 100%;
+    height: 100%;
+}
+
 .hidden {
     display: none;
 }

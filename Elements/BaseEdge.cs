@@ -4,8 +4,9 @@
 
 using System.Collections.Generic;
 using System.Linq;
-using UnityEngine;
+using System.Numerics;
 using UnityEngine.UIElements;
+using Vector2 = UnityEngine.Vector2;
 
 namespace GraphViewPlayer
 {
@@ -106,16 +107,19 @@ namespace GraphViewPlayer
 
         protected override void OnAddedToGraphView()
         {
+            base.OnAddedToGraphView();
             UpdateCachedInputPortPosition();
             UpdateCachedOutputPortPosition();
         }
 
         protected override void OnRemovedFromGraphView()
         {
+            base.OnRemovedFromGraphView();
             Disconnect();
             ResetLayer();
-            UnsetPositionOverrides();
             Selected = false;
+            UnsetPositionOverrides();
+            pickingMode = PickingMode.Position;
         }
         #endregion
 
@@ -200,6 +204,25 @@ namespace GraphViewPlayer
         #region Position
         protected abstract void OnEdgeChanged();
 
+        public override void SetPosition(Vector2 newPosition)
+        {
+            if (IsInputPositionOverriden()) SetInputPositionOverride(newPosition);
+            else if (IsOutputPositionOverriden()) SetOutputPositionOverride(newPosition);
+            // If there are no overrides, ignore this because we aren't dragging yet.
+        }
+
+        public override Vector2 GetPosition()
+        {
+            if (IsInputPositionOverriden()) return GetInputPositionOverride();
+            if (IsOutputPositionOverriden()) return GetOutputPositionOverride();
+            return Vector2.zero;
+        }
+
+        public override void ApplyDeltaToPosition(Vector2 delta)
+        {
+            SetPosition(GetPosition() + delta);
+        }
+
         public Vector2 GetInputPositionOverride() => m_InputPositionOverride;
         public Vector2 GetOutputPositionOverride() => m_OutputPositionOverride;
         public bool IsInputPositionOverriden() => m_InputPositionOverridden;
@@ -240,17 +263,20 @@ namespace GraphViewPlayer
         #endregion
 
         #region Drag Events
-        [EventInterest(typeof(DragBeginEvent), typeof(DragEvent), typeof(DragEndEvent), typeof(DragCancelEvent))]
+        private bool m_ArePortsLit;
+        
+        [EventInterest(typeof(DragOfferEvent), typeof(DragEvent), typeof(DragEndEvent), typeof(DragCancelEvent))]
         protected override void ExecuteDefaultActionAtTarget(EventBase evt)
         {
             base.ExecuteDefaultActionAtTarget(evt);
-            if (evt.eventTypeId == DragBeginEvent.TypeId()) OnDragBegin((DragBeginEvent)evt);
+            if (evt.eventTypeId == DragOfferEvent.TypeId()) OnDragOffer((DragOfferEvent)evt);
+            else if (evt.eventTypeId == DragBeginEvent.TypeId()) OnDragBegin((DragBeginEvent)evt);
             else if (evt.eventTypeId == DragEvent.TypeId()) OnDrag((DragEvent)evt);
             else if (evt.eventTypeId == DragEndEvent.TypeId()) OnDragEnd((DragEndEvent)evt);
             else if (evt.eventTypeId == DragCancelEvent.TypeId()) OnDragCancel((DragCancelEvent)evt);
         }
         
-        private void OnDragBegin(DragBeginEvent e)
+        private void OnDragOffer(DragOfferEvent e)
         {
             // Check if this is a edge drag event 
             if (!IsEdgeDrag(e) || !IsMovable()) return;
@@ -265,39 +291,66 @@ namespace GraphViewPlayer
             e.SetDragThreshold(10);
         }
 
+        private void OnDragBegin(DragBeginEvent e)
+        {
+            // Swallow event
+            e.StopImmediatePropagation();
+            
+            // In case this is a candidate edge created by a port, we need to be set visible at this point
+            visible = true;
+            
+            // Record dragged port (whichever is closest to the mouse)
+            bool draggedInput;
+            if (Input == null) draggedInput = true;
+            else if (Output == null) draggedInput = false;
+            else
+            {
+                Vector2 inputPos = Input.GetGlobalCenter();
+                Vector2 outputPos = Output.GetGlobalCenter();
+                float distanceFromInput = (e.mousePosition - inputPos).sqrMagnitude;
+                float distanceFromOutput = (e.mousePosition - outputPos).sqrMagnitude;
+                draggedInput = distanceFromInput < distanceFromOutput;
+            }
+            
+            // TODO - Collect dragged edges and set their overrides (that's how we signal the drag right now - TODO)
+            if (draggedInput)
+            {
+                CollectDraggedEdges(Input);
+                for (int i = 0; i < DraggedEdges.Count; i++)
+                {
+                    BaseEdge edge = DraggedEdges[i];
+                    edge.SetInputPositionOverride(edge.GetInputPositionOverride());
+                    edge.pickingMode = PickingMode.Ignore;
+                }  
+            }
+            else
+            {
+                CollectDraggedEdges(Output); 
+                for (int i = 0; i < DraggedEdges.Count; i++)
+                {
+                    BaseEdge edge = DraggedEdges[i];
+                    edge.SetOutputPositionOverride(edge.GetOutputPositionOverride());
+                    edge.pickingMode = PickingMode.Ignore;
+                } 
+            }
+            
+            // Set user data
+            e.SetUserData(this);
+
+            // Track for panning
+            Graph.TrackElementForPan(this);
+            
+            // Flag to light ports
+            m_ArePortsLit = false;
+        }
+
         private void OnDrag(DragEvent e)
         {
             // Swallow event
             e.StopImmediatePropagation();
 
-            // This is the first time we breached the drag threshold
-            BasePort anchoredPort;
-            bool isDragStart = e.GetUserData() == null;
-            if (isDragStart)
-            {
-                // Record detached port (whichever is closest to the mouse)
-                if (Input == null) { anchoredPort = Output; }
-                else if (Output == null) { anchoredPort = Input; }
-                else
-                {
-                    Vector2 inputPos = Input.GetGlobalCenter();
-                    Vector2 outputPos = Output.GetGlobalCenter();
-                    float distanceFromInput = (e.mousePosition - inputPos).sqrMagnitude;
-                    float distanceFromOutput = (e.mousePosition - outputPos).sqrMagnitude;
-                    anchoredPort = distanceFromInput < distanceFromOutput ? Output : Input;
-                }
-
-                // Populate dragged edges
-                CollectDraggedEdges(Input == anchoredPort ? Output : Input);
-
-                // Set user data
-                e.SetUserData(this);
-
-                // Track for panning
-                Graph.TrackElementForPan(this);
-            }
-            else { anchoredPort = IsInputPositionOverriden() ? Output : Input; }
-
+            // Grab anchored port
+            BasePort anchoredPort = IsInputPositionOverriden() ? Output : Input; 
             Vector2 newPosition = Graph.ContentContainer.WorldToLocal(e.mousePosition);
             for (int i = 0; i < DraggedEdges.Count; i++)
             {
@@ -307,11 +360,22 @@ namespace GraphViewPlayer
             }
 
             // Only light compatible anchors when dragging an edge, otherwise we can't tell if it's a candidate edge.
-            if (isDragStart) { Graph.IlluminateCompatiblePorts(Input == anchoredPort ? Input : Output); }
+            if (!m_ArePortsLit)
+            {
+                Graph.IlluminateCompatiblePorts(Input == anchoredPort ? Input : Output);
+                m_ArePortsLit = true;
+            }
         }
 
         private void OnDragEnd(DragEndEvent e)
         {
+            // Reset picking mode
+            for (int i = 0; i < DraggedEdges.Count; i++)
+            {
+                BaseEdge edge = DraggedEdges[i];
+                edge.pickingMode = PickingMode.Position;
+            }
+
             // Clear dragged edges
             DraggedEdges.Clear(); // TODO - this is a leak cause it's never called when this element is deleted during a drag
 
@@ -334,6 +398,8 @@ namespace GraphViewPlayer
                     edge.ResetLayer();
                     edge.UnsetPositionOverrides();
                     edge.Selected = false;
+                    // Reset picking mode
+                    edge.pickingMode = PickingMode.Position;
                 }
                 else if (edge.Graph != null)
                 {
@@ -342,6 +408,8 @@ namespace GraphViewPlayer
                         edge.Graph.IlluminateAllPorts();
                         highlightsReset = true;
                     }
+                    // Reset picking mode
+                    edge.pickingMode = PickingMode.Position;
                     edge.Graph.RemoveElement(edge);
                 }
             }
@@ -380,6 +448,75 @@ namespace GraphViewPlayer
                 }
             }
             else { DraggedEdges.Add(this); }
+        }
+        #endregion
+        
+        #region Selection Drag
+        public override bool CanHandleSelectionDrag(DragOfferEvent e) => IsEdgeDrag(e) && IsMovable();
+        public override void InitializeSelectionDrag(DragOfferEvent e) => e.SetDragThreshold(10);
+        public override void HandleSelectionDrag(DragEvent e)
+        {
+            // This is the first time we breached the drag threshold
+            BasePort anchoredPort;
+            bool isDragStart = e.GetUserData() == null;
+            if (isDragStart)
+            {
+                // Record detached port (whichever is closest to the mouse)
+                if (Input == null) { anchoredPort = Output; }
+                else if (Output == null) { anchoredPort = Input; }
+                else
+                {
+                    Vector2 inputPos = Input.GetGlobalCenter();
+                    Vector2 outputPos = Output.GetGlobalCenter();
+                    float distanceFromInput = (e.mousePosition - inputPos).sqrMagnitude;
+                    float distanceFromOutput = (e.mousePosition - outputPos).sqrMagnitude;
+                    anchoredPort = distanceFromInput < distanceFromOutput ? Output : Input;
+                }
+
+                // Set user data
+                e.SetUserData(this);
+            }
+            else { anchoredPort = IsInputPositionOverriden() ? Output : Input; }
+
+            // Set position
+            Vector2 newPosition = Graph.ContentContainer.WorldToLocal(e.mousePosition);
+            if (anchoredPort.Direction == Direction.Input) { SetOutputPositionOverride(newPosition); }
+            else { SetInputPositionOverride(newPosition); }
+
+            // Only light compatible anchors when dragging an edge, otherwise we can't tell if it's a candidate edge.
+            if (isDragStart) { Graph.IlluminateCompatiblePorts(Input == anchoredPort ? Input : Output); }
+        }
+
+        public override void HandleSelectionDragEnd(DragEndEvent e)
+        {
+            // We only need to re-illuminate the ports once 
+            if (Graph != null && e.GetUserData() != null)
+            {
+                e.SetUserData(null);
+                Graph.IlluminateAllPorts();
+            }
+        }
+
+        public override void HandleSelectionDragCancel(DragCancelEvent e, Vector2 panDiff)
+        {
+            // We only need to re-illuminate the ports once 
+            if (Graph != null && e.GetUserData() != null)
+            {
+                e.SetUserData(null);
+                Graph.IlluminateAllPorts();
+            }
+            
+            // Reset position
+            if (IsRealEdge())
+            {
+                ResetLayer();
+                UnsetPositionOverrides();
+                Selected = false;
+            }
+            else if (Graph != null)
+            {
+                Graph.RemoveElement(this);
+            }
         }
         #endregion
     }

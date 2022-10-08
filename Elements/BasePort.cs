@@ -262,11 +262,13 @@ namespace GraphViewPlayer
         public Vector2 GetCenter() => new Rect(Vector2.zero, m_ConnectorBox.layout.size).center;
         public Vector2 GetPosition() => Vector2.zero;
 
-        public void SetPosition(Vector3 position)
+        public void SetPosition(Vector2 position)
         {
             style.left = new Length(position.x, LengthUnit.Pixel);
             style.top = new Length(position.y, LengthUnit.Pixel);
         }
+
+        public void ApplyDeltaToPosition(Vector2 delta) => SetPosition(GetPosition() + delta);
 
         private void OnParentPositionChange(PositionData positionData)
         {
@@ -278,19 +280,18 @@ namespace GraphViewPlayer
         #endregion
 
         #region Event Handlers 
-        [EventInterest(typeof(DragBeginEvent), typeof(DragEvent), typeof(DragEndEvent), typeof(DragCancelEvent), 
+        [EventInterest(typeof(DragOfferEvent), typeof(DragEvent), typeof(DragEndEvent), typeof(DragCancelEvent), 
             typeof(DropEnterEvent), typeof(DropEvent), typeof(DropExitEvent))]
         protected override void ExecuteDefaultActionAtTarget(EventBase evt)
         {
             base.ExecuteDefaultActionAtTarget(evt);
-            if (evt.eventTypeId == DragBeginEvent.TypeId()) OnDragBegin((DragBeginEvent)evt);
-            else if (evt.eventTypeId == DragEvent.TypeId()) OnDrag((DragEvent)evt);
+            if (evt.eventTypeId == DragOfferEvent.TypeId()) OnDragOffer((DragOfferEvent)evt);
             else if (evt.eventTypeId == DropEnterEvent.TypeId()) OnDropEnter((DropEnterEvent)evt);
             else if (evt.eventTypeId == DropEvent.TypeId()) OnDrop((DropEvent)evt);
             else if (evt.eventTypeId == DropExitEvent.TypeId()) OnDropExit((DropExitEvent)evt);
         }
 
-        private void OnDragBegin(DragBeginEvent e)
+        private void OnDragOffer(DragOfferEvent e)
         {
             // Check if this is a port drag event 
             if (!IsPortDrag(e) || !CanConnectToMore()) return;
@@ -298,38 +299,17 @@ namespace GraphViewPlayer
             // Swallow event
             e.StopImmediatePropagation();
             
+            // Create edge
+            BaseEdge draggedEdge = ParentNode.Graph.CreateEdge();
+            draggedEdge.SetPortByDirection(this);
+            draggedEdge.visible = false;
+            ParentNode.Graph.AddElement(draggedEdge);
+            
             // Accept Drag
-            e.AcceptDrag(this);
+            e.AcceptDrag(draggedEdge);
             
             // Set threshold
             e.SetDragThreshold(10); 
-        }
-
-        private void OnDrag(DragEvent e)
-        {
-            // Swallow event
-            e.StopImmediatePropagation();
-
-            // Other connections could have been made since drag start
-            // (assuming the graph is edited atomically, but in tandem)
-            if (!CanConnectToMore())
-            {
-                e.CancelDrag(); 
-                return;
-            }
-            
-            // Check if this is the drag start
-            BaseEdge draggedEdge = e.GetUserData() as BaseEdge;
-            if (draggedEdge == null)
-            {
-                // Create edge
-                draggedEdge = ParentNode.Graph.CreateEdge();
-                draggedEdge.SetPortByDirection(this);
-                ParentNode.Graph.AddElement(draggedEdge);
-            }
-
-            // Drag
-            e.ReplaceDrag(draggedEdge);
         }
 
         private void OnDropEnter(DropEnterEvent e)

@@ -8,7 +8,7 @@ using UnityEngine.UIElements;
 
 namespace GraphViewPlayer
 {
-    public abstract class GraphElement : VisualElement, ISelectable, IPositionable
+    public abstract class GraphElement : VisualElement, ISelectable, IPositionable, IDraggableSelection
     {
         private static readonly CustomStyleProperty<int> s_LayerProperty = new("--layer");
         private GraphView m_GraphView;
@@ -89,7 +89,7 @@ namespace GraphViewPlayer
                 if (m_Layer == value) { return; }
                 m_Layer = value;
                 m_LayerIsInline = true;
-                Graph.ChangeLayer(this);
+                Graph?.ChangeLayer(this);
             }
         }
 
@@ -116,7 +116,7 @@ namespace GraphViewPlayer
         public virtual Vector2 GetCenter() => layout.center + (Vector2)transform.position;
         public virtual Vector2 GetPosition() => transform.position;
 
-        public virtual void SetPosition(Vector3 newPosition)
+        public virtual void SetPosition(Vector2 newPosition)
         {
             transform.position = newPosition;
             OnPositionChange?.Invoke(new()
@@ -124,6 +124,11 @@ namespace GraphViewPlayer
                 element = this,
                 position = newPosition
             });
+        }
+
+        public virtual void ApplyDeltaToPosition(Vector2 delta)
+        {
+            SetPosition((Vector2)transform.position + delta);
         }
         #endregion
 
@@ -140,6 +145,19 @@ namespace GraphViewPlayer
 
         public virtual bool IsSelectable() =>
             (Capabilities & Capabilities.Selectable) == Capabilities.Selectable && visible;
+        #endregion
+
+        
+        
+        
+        
+        
+        #region Selection Drag
+        public abstract bool CanHandleSelectionDrag(DragOfferEvent e);
+        public abstract void InitializeSelectionDrag(DragOfferEvent e);
+        public abstract void HandleSelectionDrag(DragEvent e);
+        public abstract void HandleSelectionDragEnd(DragEndEvent e);
+        public abstract void HandleSelectionDragCancel(DragCancelEvent e, Vector2 panDiff);
         #endregion
     }
 }

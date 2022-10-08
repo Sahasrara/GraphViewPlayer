@@ -10,7 +10,8 @@ namespace GraphViewPlayer
         public Vector2 GetGlobalCenter();
         public Vector2 GetCenter();
         public Vector2 GetPosition();
-        public void SetPosition(Vector3 position);
+        public void SetPosition(Vector2 position);
+        public void ApplyDeltaToPosition(Vector2 delta);
     }
 
     public struct PositionData

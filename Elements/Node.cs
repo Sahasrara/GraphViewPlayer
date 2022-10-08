@@ -84,6 +84,15 @@ namespace GraphViewPlayer
                 else { RemoveFromClassList("node-selected"); }
             }
         }
+        
+        #region Event Handlers
+        protected override void OnRemovedFromGraphView()
+        {
+            base.OnRemovedFromGraphView();
+            Selected = false;
+            pickingMode = PickingMode.Position;
+        }
+        #endregion
 
         #region Ports
         public virtual void AddPort(BasePort port)
@@ -93,19 +102,28 @@ namespace GraphViewPlayer
             else { OutputContainer.Add(port); }
         }
         #endregion
+        
+        #region Position
+        public override void SetPosition(Vector2 newPosition)
+        {
+            base.SetPosition(newPosition);
+            Graph?.OnNodeMoved(this);
+        }
+        #endregion
 
         #region Drag Events
-        [EventInterest(typeof(DragBeginEvent), typeof(DragEvent), typeof(DragEndEvent), typeof(DragCancelEvent))]
+        [EventInterest(typeof(DragOfferEvent), typeof(DragEvent), typeof(DragEndEvent), typeof(DragCancelEvent))]
         protected override void ExecuteDefaultActionAtTarget(EventBase evt)
         {
             base.ExecuteDefaultActionAtTarget(evt);
-            if (evt.eventTypeId == DragBeginEvent.TypeId()) OnDragBegin((DragBeginEvent)evt);
+            if (evt.eventTypeId == DragOfferEvent.TypeId()) OnDragOffer((DragOfferEvent)evt);
+            else if (evt.eventTypeId == DragBeginEvent.TypeId()) OnDragBegin((DragBeginEvent)evt);
             else if (evt.eventTypeId == DragEvent.TypeId()) OnDrag((DragEvent)evt);
             else if (evt.eventTypeId == DragEndEvent.TypeId()) OnDragEnd((DragEndEvent)evt);
             else if (evt.eventTypeId == DragCancelEvent.TypeId()) OnDragCancel((DragCancelEvent)evt);
         }
         
-        private void OnDragBegin(DragBeginEvent e)
+        private void OnDragOffer(DragOfferEvent e)
         {
             // Check if this is a node drag event 
             if (!IsNodeDrag(e) || !IsMovable()) return;
@@ -118,17 +136,24 @@ namespace GraphViewPlayer
             Graph.TrackElementForPan(this); 
         }
 
+        private void OnDragBegin(DragBeginEvent e)
+        {
+            // Swallow event
+            e.StopImmediatePropagation(); 
+            
+            // Ignore picking
+            pickingMode = PickingMode.Ignore;
+        }
+
         private void OnDrag(DragEvent e)
         {
             // Swallow event
             e.StopImmediatePropagation();
             
             // Handle drag
-            e.StopImmediatePropagation();
             foreach (Node node in Graph.NodesSelected)
             {
                 node.SetPosition(node.GetPosition() + e.mouseDelta / Graph.CurrentScale);
-                Graph.OnNodeMoved(node);
             }
         }
 
@@ -139,6 +164,12 @@ namespace GraphViewPlayer
             
             // Untrack for panning
             Graph.UntrackElementForPan(this);
+            
+            // Reset picking mode
+            foreach (Node node in Graph.NodesSelected)
+            {
+                node.pickingMode = PickingMode.Position;
+            }
         }
 
         private void OnDragCancel(DragCancelEvent e)
@@ -149,8 +180,12 @@ namespace GraphViewPlayer
             // Untrack for panning
             Vector2 totalDiff = (e.DeltaToDragOrigin - Graph.UntrackElementForPan(this, true)) / Graph.CurrentScale;
 
-            // Reset position
-            foreach (Node node in Graph.NodesSelected) { node.SetPosition(node.GetPosition() + totalDiff); } 
+            // Reset position and picking mode
+            foreach (Node node in Graph.NodesSelected)
+            {
+                node.SetPosition(node.GetPosition() + totalDiff);
+                node.pickingMode = PickingMode.Position;
+            } 
         }
 
         private bool IsNodeDrag<T>(DragAndDropEvent<T> e) where T : DragAndDropEvent<T>, new()
@@ -159,6 +194,17 @@ namespace GraphViewPlayer
             if (!e.modifiers.IsNone()) return false;
             return true;
         }
+        #endregion
+        
+        
+        #region Selection Drag
+        public override bool CanHandleSelectionDrag(DragOfferEvent e) => IsNodeDrag(e) && IsMovable();
+        public override void InitializeSelectionDrag(DragOfferEvent e) { }
+        public override void HandleSelectionDrag(DragEvent e) 
+            => ApplyDeltaToPosition(e.mouseDelta / Graph.CurrentScale);
+        public override void HandleSelectionDragEnd(DragEndEvent e) { }
+        public override void HandleSelectionDragCancel(DragCancelEvent e, Vector2 panDiff) 
+            => ApplyDeltaToPosition((e.DeltaToDragOrigin - panDiff) / Graph.CurrentScale);
         #endregion
     }
 }

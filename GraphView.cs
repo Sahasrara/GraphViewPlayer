@@ -30,7 +30,7 @@ namespace GraphViewPlayer
         protected GraphView()
         {
             //
-            // RUIGraphView - Level 0
+            // GraphView - Level 0
             //
             // Style
             styleSheets.Add(DefaultStyle);
@@ -62,7 +62,13 @@ namespace GraphViewPlayer
             };
             ContentContainer.AddToClassList("content-view-container");
             GraphViewContainer.Add(ContentContainer);
-
+            
+            //
+            // Selection - Level 3
+            //
+            // Selection = new(this);
+            // AddElement(Selection);
+            
             //
             // Other Initialization
             //
@@ -110,6 +116,7 @@ namespace GraphViewPlayer
         
         internal ViewTransformChanged OnViewTransformChanged { get; set; }
 
+        private Selection Selection { get; }
         private VisualElement GraphViewContainer { get; }
         public VisualElement ContentContainer { get; }
         public ITransform ViewTransform => ContentContainer.transform;
@@ -151,12 +158,12 @@ namespace GraphViewPlayer
         #endregion
 
         #region Pan
-        private GraphElement m_PanElement;
+        private IPositionable m_PanElement;
         private Vector2 m_PanOriginDiff;
         private bool m_PanElementIsNode;
         private readonly IVisualElementScheduledItem m_PanSchedule;
 
-        internal void TrackElementForPan(GraphElement element)
+        internal void TrackElementForPan(IPositionable element)
         {
             m_PanOriginDiff = Vector2.zero;
             m_PanElement = element;
@@ -164,7 +171,7 @@ namespace GraphViewPlayer
             m_PanSchedule.Resume();
         }
 
-        internal Vector2 UntrackElementForPan(GraphElement element, bool resetView = false)
+        internal Vector2 UntrackElementForPan(IPositionable element, bool resetView = false)
         {
             if (element == m_PanElement)
             {
@@ -227,18 +234,16 @@ namespace GraphViewPlayer
                 // Nodes
                 foreach (Node selectedNode in NodesSelected)
                 {
-                    selectedNode.SetPosition(selectedNode.GetPosition() + localSpeed);
+                    selectedNode.ApplyDeltaToPosition(localSpeed);
                 }
             }
             else
             {
                 // Edges
-                BaseEdge edge = (BaseEdge)m_PanElement;
-                if (edge.IsInputPositionOverriden())
+                foreach (BaseEdge selectedEdges in EdgesSelected)
                 {
-                    edge.SetInputPositionOverride(edge.GetInputPositionOverride() + localSpeed);
+                    selectedEdges.ApplyDeltaToPosition(localSpeed);
                 }
-                else { edge.SetOutputPositionOverride(edge.GetOutputPositionOverride() + localSpeed); }
             }
         }
         #endregion
@@ -363,12 +368,12 @@ namespace GraphViewPlayer
         private bool m_DraggingMarquee;
         private readonly Marquee m_Marquee;
         
-        [EventInterest(typeof(DragBeginEvent), typeof(DragEvent), typeof(DragEndEvent), typeof(DragCancelEvent), 
+        [EventInterest(typeof(DragOfferEvent), typeof(DragEvent), typeof(DragEndEvent), typeof(DragCancelEvent), 
             typeof(DropEnterEvent), typeof(DropEvent), typeof(DropExitEvent))]
         protected override void ExecuteDefaultActionAtTarget(EventBase evt)
         {
             base.ExecuteDefaultActionAtTarget(evt);
-            if (evt.eventTypeId == DragBeginEvent.TypeId()) OnDragBegin((DragBeginEvent)evt);
+            if (evt.eventTypeId == DragOfferEvent.TypeId()) OnDragOffer((DragOfferEvent)evt);
             else if (evt.eventTypeId == DragEvent.TypeId()) OnDrag((DragEvent)evt);
             else if (evt.eventTypeId == DragEndEvent.TypeId()) OnDragEnd((DragEndEvent)evt);
             else if (evt.eventTypeId == DragCancelEvent.TypeId()) OnDragCancel((DragCancelEvent)evt);
@@ -377,7 +382,7 @@ namespace GraphViewPlayer
             else if (evt.eventTypeId == DropExitEvent.TypeId()) OnDropExit((DropExitEvent)evt);
         }
         
-        private void OnDragBegin(DragBeginEvent e)
+        private void OnDragOffer(DragOfferEvent e)
         {
             if (IsViewDrag(e))
             {
@@ -483,15 +488,15 @@ namespace GraphViewPlayer
 
         private void OnDrop(DropEvent e)
         {
-            Debug.Log($"on drop 1 {e.GetUserData()} - {e}");
+            Debug.Log("Dropped " + e.GetDraggedElement());
             if (e.GetUserData() is BaseEdge draggedEdge)
             {
                 e.StopImmediatePropagation();
-                Debug.Log($"on drop 2 - {draggedEdge.DraggedEdges.Count}");
                 for (int i = 0; i < draggedEdge.DraggedEdges.Count; i++)
                 {
                     // Grab dragged edge and the corresponding anchored port
                     BaseEdge edge = draggedEdge.DraggedEdges[i];
+                    Debug.Log("Dropped " + edge);
 
                     // Delete real edge
                     if (edge.IsRealEdge()) { OnEdgeDelete(edge); }

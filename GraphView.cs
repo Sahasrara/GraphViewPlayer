@@ -62,13 +62,13 @@ namespace GraphViewPlayer
             };
             ContentContainer.AddToClassList("content-view-container");
             GraphViewContainer.Add(ContentContainer);
-            
+
             //
             // Selection - Level 3
             //
             // Selection = new(this);
             // AddElement(Selection);
-            
+
             //
             // Other Initialization
             //
@@ -85,7 +85,7 @@ namespace GraphViewPlayer
 
             // Layers
             m_ContainerLayers = new();
-            
+
             // Create Marquee 
             m_Marquee = new();
 
@@ -113,7 +113,7 @@ namespace GraphViewPlayer
                 return s_DefaultStyle;
             }
         }
-        
+
         internal ViewTransformChanged OnViewTransformChanged { get; set; }
 
         private Selection Selection { get; }
@@ -232,18 +232,12 @@ namespace GraphViewPlayer
             if (m_PanElementIsNode)
             {
                 // Nodes
-                foreach (Node selectedNode in NodesSelected)
-                {
-                    selectedNode.ApplyDeltaToPosition(localSpeed);
-                }
+                foreach (Node selectedNode in NodesSelected) { selectedNode.ApplyDeltaToPosition(localSpeed); }
             }
             else
             {
                 // Edges
-                foreach (BaseEdge selectedEdges in EdgesSelected)
-                {
-                    selectedEdges.ApplyDeltaToPosition(localSpeed);
-                }
+                foreach (BaseEdge selectedEdges in EdgesSelected) { selectedEdges.ApplyDeltaToPosition(localSpeed); }
             }
         }
         #endregion
@@ -367,21 +361,21 @@ namespace GraphViewPlayer
         private bool m_DraggingView;
         private bool m_DraggingMarquee;
         private readonly Marquee m_Marquee;
-        
-        [EventInterest(typeof(DragOfferEvent), typeof(DragEvent), typeof(DragEndEvent), typeof(DragCancelEvent), 
+
+        [EventInterest(typeof(DragOfferEvent), typeof(DragEvent), typeof(DragEndEvent), typeof(DragCancelEvent),
             typeof(DropEnterEvent), typeof(DropEvent), typeof(DropExitEvent))]
         protected override void ExecuteDefaultActionAtTarget(EventBase evt)
         {
             base.ExecuteDefaultActionAtTarget(evt);
-            if (evt.eventTypeId == DragOfferEvent.TypeId()) OnDragOffer((DragOfferEvent)evt);
-            else if (evt.eventTypeId == DragEvent.TypeId()) OnDrag((DragEvent)evt);
-            else if (evt.eventTypeId == DragEndEvent.TypeId()) OnDragEnd((DragEndEvent)evt);
-            else if (evt.eventTypeId == DragCancelEvent.TypeId()) OnDragCancel((DragCancelEvent)evt);
-            else if (evt.eventTypeId == DropEnterEvent.TypeId()) OnDropEnter((DropEnterEvent)evt);
-            else if (evt.eventTypeId == DropEvent.TypeId()) OnDrop((DropEvent)evt);
-            else if (evt.eventTypeId == DropExitEvent.TypeId()) OnDropExit((DropExitEvent)evt);
+            if (evt.eventTypeId == DragOfferEvent.TypeId()) { OnDragOffer((DragOfferEvent)evt); }
+            else if (evt.eventTypeId == DragEvent.TypeId()) { OnDrag((DragEvent)evt); }
+            else if (evt.eventTypeId == DragEndEvent.TypeId()) { OnDragEnd((DragEndEvent)evt); }
+            else if (evt.eventTypeId == DragCancelEvent.TypeId()) { OnDragCancel((DragCancelEvent)evt); }
+            else if (evt.eventTypeId == DropEnterEvent.TypeId()) { OnDropEnter((DropEnterEvent)evt); }
+            else if (evt.eventTypeId == DropEvent.TypeId()) { OnDrop((DropEvent)evt); }
+            else if (evt.eventTypeId == DropExitEvent.TypeId()) { OnDropExit((DropExitEvent)evt); }
         }
-        
+
         private void OnDragOffer(DragOfferEvent e)
         {
             if (IsViewDrag(e))
@@ -397,13 +391,13 @@ namespace GraphViewPlayer
                 e.AcceptDrag(this);
                 e.StopImmediatePropagation();
                 m_DraggingMarquee = true;
-                
+
                 // Clear selection if this is an exclusive select 
                 bool additive = e.modifiers.IsShift();
                 bool subtractive = e.modifiers.IsActionKey();
                 bool exclusive = !(additive ^ subtractive);
                 if (exclusive) { ClearSelection(); }
-                
+
                 // Create marquee
                 Add(m_Marquee);
                 Vector2 position = this.WorldToLocal(e.mousePosition);
@@ -420,12 +414,14 @@ namespace GraphViewPlayer
             if (m_DraggingMarquee)
             {
                 e.StopImmediatePropagation();
+
                 // TODO - MouseMoveEvent doesn't correctly report mouse button so I don't check IsMarqueeDrag 
                 m_Marquee.End = this.WorldToLocal(e.mousePosition);
             }
             else if (m_DraggingView)
             {
                 e.StopImmediatePropagation();
+
                 // TODO - MouseMoveEvent doesn't correctly report mouse button so I don't check IsViewDrag 
                 UpdateViewTransform(ViewTransform.position + (Vector3)e.mouseDelta);
             }
@@ -438,11 +434,11 @@ namespace GraphViewPlayer
                 // Remove marquee
                 e.StopImmediatePropagation();
                 m_Marquee.RemoveFromHierarchy();
-                
+
                 // Ignore if the rectangle is infinitely small
                 Rect selectionRect = m_Marquee.SelectionRect;
                 if (selectionRect.size == Vector2.zero) { return; }
-                
+
                 // Select elements that overlap the marquee
                 bool additive = e.modifiers.IsShift();
                 bool subtractive = e.modifiers.IsActionKey();
@@ -459,7 +455,7 @@ namespace GraphViewPlayer
             {
                 e.StopImmediatePropagation();
                 m_DraggingView = false;
-            } 
+            }
         }
 
         private void OnDragCancel(DragCancelEvent e)
@@ -473,22 +469,18 @@ namespace GraphViewPlayer
             else if (m_DraggingView)
             {
                 e.StopImmediatePropagation();
-                UpdateViewTransform(ViewTransform.position + Vector3.Scale(e.mouseDelta, ViewTransform.scale)); 
+                UpdateViewTransform(ViewTransform.position + Vector3.Scale(e.mouseDelta, ViewTransform.scale));
                 m_DraggingView = false;
-            }  
+            }
         }
 
         private void OnDropEnter(DropEnterEvent e)
         {
-            if (e.GetUserData() is BaseEdge draggedEdge)
-            {
-                e.StopImmediatePropagation();
-            }
+            if (e.GetUserData() is BaseEdge draggedEdge) { e.StopImmediatePropagation(); }
         }
 
         private void OnDrop(DropEvent e)
         {
-            Debug.Log("Dropped " + e.GetDraggedElement());
             if (e.GetUserData() is BaseEdge draggedEdge)
             {
                 e.StopImmediatePropagation();
@@ -496,7 +488,6 @@ namespace GraphViewPlayer
                 {
                     // Grab dragged edge and the corresponding anchored port
                     BaseEdge edge = draggedEdge.DraggedEdges[i];
-                    Debug.Log("Dropped " + edge);
 
                     // Delete real edge
                     if (edge.IsRealEdge()) { OnEdgeDelete(edge); }
@@ -507,15 +498,12 @@ namespace GraphViewPlayer
 
                 // Reset port highlights
                 IlluminateAllPorts();
-            } 
+            }
         }
 
         private void OnDropExit(DropExitEvent e)
         {
-            if (e.GetUserData() is BaseEdge draggedEdge)
-            {
-                e.StopImmediatePropagation();
-            }
+            if (e.GetUserData() is BaseEdge draggedEdge) { e.StopImmediatePropagation(); }
         }
 
         private bool IsMarqueeDrag<T>(DragAndDropEvent<T> e) where T : DragAndDropEvent<T>, new()
@@ -524,13 +512,13 @@ namespace GraphViewPlayer
             if (e.modifiers.IsNone()) { return true; }
             if (e.modifiers.IsExclusiveShift()) { return true; }
             if (e.modifiers.IsExclusiveActionKey()) { return true; }
-            return false; 
+            return false;
         }
-        
+
         private bool IsViewDrag<T>(DragAndDropEvent<T> e) where T : DragAndDropEvent<T>, new()
         {
-            if ((MouseButton)e.button != MouseButton.MiddleMouse) return false;
-            if (!e.modifiers.IsNone()) return false;
+            if ((MouseButton)e.button != MouseButton.MiddleMouse) { return false; }
+            if (!e.modifiers.IsNone()) { return false; }
             return true;
         }
         #endregion

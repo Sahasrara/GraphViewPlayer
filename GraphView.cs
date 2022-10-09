@@ -11,7 +11,7 @@ using UnityEngine.UIElements;
 
 namespace GraphViewPlayer
 {
-    public abstract class GraphView : VisualElement, ISelector
+    public abstract class GraphView : VisualElement
     {
         private const int k_FrameBorder = 30;
         private const int k_PanAreaWidth = 100;
@@ -25,7 +25,8 @@ namespace GraphViewPlayer
         private static StyleSheet s_DefaultStyle;
 
         private readonly Dictionary<int, Layer> m_ContainerLayers;
-
+        private readonly VisualElement m_GridBackground;
+        
         #region Constructor
         protected GraphView()
         {
@@ -46,30 +47,19 @@ namespace GraphViewPlayer
             // Graph View Container & Grid - Level 1
             //
             // Root Container
-            GraphViewContainer = new GridBackground();
-            hierarchy.Add(GraphViewContainer);
+            m_GridBackground = new GridBackground();
+            hierarchy.Add(m_GridBackground);
 
             //
             // Content Container - Level 2
             //
             // Content Container
-            ContentContainer = new ContentView();
-            GraphViewContainer.Add(ContentContainer);
+            ContentContainer = new(this);
+            m_GridBackground.Add(ContentContainer);
 
             //
             // Other Initialization
             //
-            // Cached Queries
-            ElementsAll = ContentContainer.Query<GraphElement>().Build();
-            ElementsSelected = ContentContainer.Query<GraphElement>().Where(WhereSelected).Build();
-            ElementsUnselected = ContentContainer.Query<GraphElement>().Where(WhereUnselected).Build();
-
-            Nodes = ContentContainer.Query<Node>().Build();
-            NodesSelected = ContentContainer.Query<Node>().Where(WhereSelected).Build();
-            Edges = this.Query<Layer>().Children<BaseEdge>().Build();
-            EdgesSelected = this.Query<Layer>().Children<BaseEdge>().Where(WhereSelected).Build();
-            Ports = ContentContainer.Query().Children<Layer>().Descendents<BasePort>().Build();
-
             // Layers
             m_ContainerLayers = new();
 
@@ -104,18 +94,8 @@ namespace GraphViewPlayer
 
         internal ViewTransformChanged OnViewTransformChanged { get; set; }
 
-        private VisualElement GraphViewContainer { get; }
-        public VisualElement ContentContainer { get; }
-        public ITransform ViewTransform => ContentContainer.transform;
-
-        public UQueryState<Node> Nodes { get; }
-        public UQueryState<Node> NodesSelected { get; }
-        public UQueryState<BasePort> Ports { get; }
-        public UQueryState<BaseEdge> Edges { get; }
-        public UQueryState<BaseEdge> EdgesSelected { get; }
-        public UQueryState<GraphElement> ElementsAll { get; }
-        public UQueryState<GraphElement> ElementsSelected { get; }
-        public UQueryState<GraphElement> ElementsUnselected { get; }
+        internal ContentView ContentContainer { get; }
+        internal ITransform ViewTransform => ContentContainer.transform;
         #endregion
 
         #region Factories
@@ -147,14 +127,12 @@ namespace GraphViewPlayer
         #region Pan
         private IPositionable m_PanElement;
         private Vector2 m_PanOriginDiff;
-        private bool m_PanElementIsNode;
         private readonly IVisualElementScheduledItem m_PanSchedule;
 
         internal void TrackElementForPan(IPositionable element)
         {
             m_PanOriginDiff = Vector2.zero;
             m_PanElement = element;
-            m_PanElementIsNode = element is Node;
             m_PanSchedule.Resume();
         }
 
@@ -178,9 +156,9 @@ namespace GraphViewPlayer
             {
                 effectiveSpeed.x = -((k_PanAreaWidth - mousePos.x) / k_PanAreaWidthAndMinSpeedFactor) * k_PanSpeed;
             }
-            else if (mousePos.x >= GraphViewContainer.layout.width - k_PanAreaWidth)
+            else if (mousePos.x >= m_GridBackground.layout.width - k_PanAreaWidth)
             {
-                effectiveSpeed.x = (mousePos.x - (GraphViewContainer.layout.width - k_PanAreaWidth))
+                effectiveSpeed.x = (mousePos.x - (m_GridBackground.layout.width - k_PanAreaWidth))
                     / k_PanAreaWidthAndMinSpeedFactor * k_PanSpeed;
             }
 
@@ -188,9 +166,9 @@ namespace GraphViewPlayer
             {
                 effectiveSpeed.y = -((k_PanAreaWidth - mousePos.y) / k_PanAreaWidthAndMinSpeedFactor) * k_PanSpeed;
             }
-            else if (mousePos.y >= GraphViewContainer.layout.height - k_PanAreaWidth)
+            else if (mousePos.y >= m_GridBackground.layout.height - k_PanAreaWidth)
             {
-                effectiveSpeed.y = (mousePos.y - (GraphViewContainer.layout.height - k_PanAreaWidth))
+                effectiveSpeed.y = (mousePos.y - (m_GridBackground.layout.height - k_PanAreaWidth))
                     / k_PanAreaWidthAndMinSpeedFactor * k_PanSpeed;
             }
 
@@ -216,16 +194,7 @@ namespace GraphViewPlayer
             Vector2 localSpeed = speed / CurrentScale;
 
             // Set position
-            if (m_PanElementIsNode)
-            {
-                // Nodes
-                foreach (Node selectedNode in NodesSelected) { selectedNode.ApplyDeltaToPosition(localSpeed); }
-            }
-            else
-            {
-                // Edges
-                foreach (BaseEdge selectedEdges in EdgesSelected) { selectedEdges.ApplyDeltaToPosition(localSpeed); }
-            }
+            m_PanElement.ApplyDeltaToPosition(localSpeed);
         }
         #endregion
 
@@ -304,50 +273,10 @@ namespace GraphViewPlayer
         }
         #endregion
 
-        #region Selection
-        public void SelectAll()
-        {
-            foreach (GraphElement ge in ElementsAll) { ge.Selected = true; }
-        }
-
-        public void ClearSelection()
-        {
-            foreach (GraphElement ge in ElementsAll) { ge.Selected = false; }
-        }
-
-        public void CollectAll(List<ISelectable> toPopulate)
-        {
-            foreach (GraphElement ge in ElementsAll) { toPopulate.Add(ge); }
-        }
-
-        public void CollectSelected(List<ISelectable> toPopulate)
-        {
-            foreach (GraphElement ge in ElementsAll)
-            {
-                if (ge.Selected) { toPopulate.Add(ge); }
-            }
-        }
-
-        public void CollectUnselected(List<ISelectable> toPopulate)
-        {
-            foreach (GraphElement ge in ElementsAll)
-            {
-                if (!ge.Selected) { toPopulate.Add(ge); }
-            }
-        }
-
-        public void ForEachAll(Action<ISelectable> action) { ElementsAll.ForEach(action); }
-        public void ForEachSelected(Action<ISelectable> action) { ElementsSelected.ForEach(action); }
-        public void ForEachUnselected(Action<ISelectable> action) { ElementsUnselected.ForEach(action); }
-
-        private bool WhereSelected(ISelectable selectable) => selectable.Selected;
-        private bool WhereUnselected(ISelectable selectable) => !selectable.Selected;
-        #endregion
-
         #region Event Handlers
+        private readonly Marquee m_Marquee;
         private bool m_DraggingView;
         private bool m_DraggingMarquee;
-        private readonly Marquee m_Marquee;
 
         [EventInterest(typeof(DragOfferEvent), typeof(DragEvent), typeof(DragEndEvent), typeof(DragCancelEvent),
             typeof(DropEnterEvent), typeof(DropEvent), typeof(DropExitEvent))]
@@ -386,7 +315,7 @@ namespace GraphViewPlayer
                 bool additive = e.modifiers.IsShift();
                 bool subtractive = e.modifiers.IsActionKey();
                 bool exclusive = !(additive ^ subtractive);
-                if (exclusive) { ClearSelection(); }
+                if (exclusive) { ContentContainer.ClearSelection(); }
 
                 // Create marquee
                 Add(m_Marquee);
@@ -407,14 +336,12 @@ namespace GraphViewPlayer
             if (m_DraggingMarquee)
             {
                 e.StopImmediatePropagation();
-
                 // TODO - MouseMoveEvent doesn't correctly report mouse button so I don't check IsMarqueeDrag 
                 m_Marquee.End = this.WorldToLocal(e.mousePosition);
             }
             else if (m_DraggingView)
             {
                 e.StopImmediatePropagation();
-
                 // TODO - MouseMoveEvent doesn't correctly report mouse button so I don't check IsViewDrag 
                 UpdateViewTransform(ViewTransform.position + (Vector3)e.mouseDelta);
             }
@@ -436,7 +363,7 @@ namespace GraphViewPlayer
                 bool additive = e.modifiers.IsShift();
                 bool subtractive = e.modifiers.IsActionKey();
                 bool exclusive = !(additive ^ subtractive);
-                foreach (GraphElement element in ElementsAll)
+                foreach (GraphElement element in ContentContainer.ElementsAll)
                 {
                     Rect localSelRect = this.ChangeCoordinatesTo(element, selectionRect);
                     if (element.Overlaps(localSelRect)) { element.Selected = exclusive || additive; }
@@ -469,37 +396,42 @@ namespace GraphViewPlayer
 
         private void OnDropEnter(DropEnterEvent e)
         {
-            if (e.GetUserData() is BaseEdge draggedEdge) { e.StopImmediatePropagation(); }
+            if (e.GetUserData() is IDropPayload dropPayload && typeof(BaseEdge).IsAssignableFrom(dropPayload.GetPayloadType()))
+            {
+                // Consume event
+                e.StopImmediatePropagation();
+            }
         }
 
         private void OnDrop(DropEvent e)
         {
-            if (e.GetUserData() is BaseEdge draggedEdge)
+            if (e.GetUserData() is IDropPayload dropPayload && typeof(BaseEdge).IsAssignableFrom(dropPayload.GetPayloadType()))
             {
+                // Consume event
                 e.StopImmediatePropagation();
-                for (int i = 0; i < draggedEdge.DraggedEdges.Count; i++)
+                
+                // Delete edges 
+                for (int i = dropPayload.GetPayload().Count - 1; i >= 0; i--)
                 {
-                    // Grab dragged edge and the corresponding anchored port
-                    BaseEdge edge = draggedEdge.DraggedEdges[i];
-
+                    // Grab the edge
+                    BaseEdge edge = (BaseEdge)dropPayload.GetPayload()[i];
+                    
                     // Delete real edge
                     if (edge.IsRealEdge()) { ExecuteEdgeDelete(edge); }
 
                     // Delete candidate edge
                     else { RemoveElement(edge); }
                 }
-
-                // BaseEdge.OnDragEnd won't be called and everything else is cleaned up by RemoveElement
-                draggedEdge.DraggedEdges.Clear(); // TODO: Hack
-
-                // Reset port highlights
-                IlluminateAllPorts();
             }
         }
 
         private void OnDropExit(DropExitEvent e)
         {
-            if (e.GetUserData() is BaseEdge draggedEdge) { e.StopImmediatePropagation(); }
+            if (e.GetUserData() is IDropPayload dropPayload && typeof(BaseEdge).IsAssignableFrom(dropPayload.GetPayloadType()))
+            {
+                // Consume event
+                e.StopImmediatePropagation();
+            }
         }
 
         private bool IsMarqueeDrag<T>(DragAndDropEvent<T> e) where T : DragAndDropEvent<T>, new()
@@ -709,12 +641,12 @@ namespace GraphViewPlayer
 
         internal void IlluminateCompatiblePorts(BasePort port)
         {
-            foreach (BasePort otherPort in Ports) { otherPort.Highlight = port.CanConnectTo(otherPort); }
+            foreach (BasePort otherPort in ContentContainer.Ports) { otherPort.Highlight = port.CanConnectTo(otherPort); }
         }
 
         internal void IlluminateAllPorts()
         {
-            foreach (BasePort otherPort in Ports) { otherPort.Highlight = true; }
+            foreach (BasePort otherPort in ContentContainer.Ports) { otherPort.Highlight = true; }
         }
         #endregion
 
@@ -726,7 +658,7 @@ namespace GraphViewPlayer
             Rect rectToFitUnselected = rectToFitSelected;
             bool reachedFirstSelected = false;
             bool reachedFirstUnselected = false;
-            foreach (GraphElement ge in ElementsAll)
+            foreach (GraphElement ge in ContentContainer.ElementsAll)
             {
                 // TODO: edge control is the VisualElement with actual dimensions
                 // VisualElement ve = ge is BaseEdge edge ? edge.EdgeControl : ge;
@@ -839,7 +771,7 @@ namespace GraphViewPlayer
         protected internal abstract void ExecuteRedo();
         protected internal abstract void ExecuteEdgeCreate(BaseEdge edge);
         protected internal abstract void ExecuteEdgeDelete(BaseEdge edge);
-        protected internal abstract void OnNodeMoved(Node node);
+        protected internal abstract void OnNodeMoved(BaseNode node);
         protected internal abstract void OnViewportChanged();
         #endregion
 
@@ -847,18 +779,6 @@ namespace GraphViewPlayer
         public class Layer : VisualElement
         {
             public Layer() => pickingMode = PickingMode.Ignore;
-        }
-
-        private class ContentView : VisualElement
-        {
-            public ContentView()
-            {
-                AddToClassList("content-view-container");
-                pickingMode = PickingMode.Ignore;
-                usageHints = UsageHints.GroupTransform;
-            }
-
-            public override bool Overlaps(Rect r) => true;
         }
         #endregion
     }

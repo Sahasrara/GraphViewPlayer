@@ -58,11 +58,17 @@ namespace GraphViewPlayer
 
         #region Graph Events
         protected virtual void OnAddedToGraphView() { }
-        protected virtual void OnRemovedFromGraphView() { }
+
+        protected virtual void OnRemovedFromGraphView()
+        {
+            pickingMode = PickingMode.Position;
+            Selected = false;
+            ResetLayer();
+        }
         #endregion
 
         #region Selectable
-        public ISelector Selector => Graph;
+        public ISelector Selector => Graph.ContentContainer;
 
         public virtual bool Selected
         {
@@ -70,12 +76,16 @@ namespace GraphViewPlayer
             set
             {
                 if (m_Selected == value) { return; }
-                if (value && Selector != null && IsSelectable())
+                if (value && IsSelectable())
                 {
                     m_Selected = true;
                     if (IsAscendable() && resolvedStyle.position != Position.Relative) { BringToFront(); }
                 }
-                else { m_Selected = false; }
+                else
+                {
+                    m_Selected = false; 
+                    if (Graph != null) Graph.ContentContainer.RemoveFromDragSelection(this);
+                }
             }
         }
         #endregion

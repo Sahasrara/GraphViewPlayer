@@ -25,11 +25,9 @@ namespace GraphViewPlayer
         private static readonly CustomStyleProperty<int> s_EdgeWidthProperty = new("--edge-width");
         private static readonly CustomStyleProperty<int> s_EdgeWidthSelectedProperty = new("--edge-width-selected");
         private static readonly CustomStyleProperty<Color> s_EdgeColorSelectedProperty = new("--edge-color-selected");
-        private static readonly CustomStyleProperty<Color> s_EdgeColorGhostProperty = new("--edge-color-ghost");
         private static readonly CustomStyleProperty<Color> s_EdgeColorProperty = new("--edge-color");
         private static readonly Color s_DefaultSelectedColor = new(240 / 255f, 240 / 255f, 240 / 255f);
         private static readonly Color s_DefaultColor = new(146 / 255f, 146 / 255f, 146 / 255f);
-        private static readonly Color s_DefaultGhostColor = new(85 / 255f, 85 / 255f, 85 / 255f);
 
         private static readonly Gradient s_Gradient = new();
         private static readonly Stack<VisualElement> s_CapPool = new();
@@ -50,7 +48,28 @@ namespace GraphViewPlayer
         private bool m_RenderPointsDirty = true;
         private VisualElement m_ToCap;
         private Color m_ToCapColor;
+        
+        #region Static Helpers
+        private static bool Approximately(Vector2 v1, Vector2 v2) =>
+            Mathf.Approximately(v1.x, v2.x) && Mathf.Approximately(v1.y, v2.y);
 
+        private static void RecycleCap(VisualElement cap) { s_CapPool.Push(cap); }
+
+        private static VisualElement GetCap()
+        {
+            VisualElement result;
+            if (s_CapPool.Count > 0) { result = s_CapPool.Pop(); }
+            else
+            {
+                result = new();
+                result.AddToClassList("edge-cap");
+            }
+
+            return result;
+        }
+        #endregion
+
+        #region Constructor
         public Edge()
         {
             ClearClassList();
@@ -61,16 +80,9 @@ namespace GraphViewPlayer
             InterceptWidth = k_InterceptWidth;
             generateVisualContent = OnGenerateVisualContent;
         }
+        #endregion
 
-        public int EdgeWidthUnselected { get; } = k_DefaultEdgeWidth;
-        public int EdgeWidthSelected { get; private set; } = k_DefaultEdgeWidthSelected;
-        public Color ColorSelected { get; private set; } = s_DefaultSelectedColor;
-        public Color ColorUnselected { get; private set; } = s_DefaultColor;
-        public Color ColorGhost { get; private set; } = s_DefaultGhostColor;
-
-        public float InterceptWidth { get; set; } = 5;
-        public Vector2[] ControlPoints { get; private set; }
-
+        #region Properties
         public override bool Selected
         {
             get => base.Selected;
@@ -80,26 +92,15 @@ namespace GraphViewPlayer
                 base.Selected = value;
                 if (value)
                 {
-                    if (IsGhostEdge) { Debug.Log("Selected Ghost Edge: this should never be"); }
-                    else
-                    {
-                        InputColor = ColorSelected;
-                        OutputColor = ColorSelected;
-                        EdgeWidth = EdgeWidthSelected;
-                    }
+                    InputColor = ColorSelected;
+                    OutputColor = ColorSelected;
+                    EdgeWidth = EdgeWidthSelected;
                 }
                 else
                 {
-                    if (IsGhostEdge)
-                    {
-                        InputColor = ColorGhost;
-                        OutputColor = ColorGhost;
-                    }
-                    else
-                    {
-                        InputColor = ColorUnselected;
-                        OutputColor = ColorUnselected;
-                    }
+
+                    InputColor = ColorUnselected;
+                    OutputColor = ColorUnselected;
                     EdgeWidth = EdgeWidthUnselected;
                 }
             }
@@ -230,25 +231,16 @@ namespace GraphViewPlayer
                 }
             }
         }
+        
+        public int EdgeWidthUnselected { get; } = k_DefaultEdgeWidth;
+        public int EdgeWidthSelected { get; private set; } = k_DefaultEdgeWidthSelected;
+        public Color ColorSelected { get; private set; } = s_DefaultSelectedColor;
+        public Color ColorUnselected { get; private set; } = s_DefaultColor;
+        public float InterceptWidth { get; set; } = 5f;
+        public Vector2[] ControlPoints { get; private set; }
+        #endregion
 
-        private static bool Approximately(Vector2 v1, Vector2 v2) =>
-            Mathf.Approximately(v1.x, v2.x) && Mathf.Approximately(v1.y, v2.y);
-
-        private static void RecycleCap(VisualElement cap) { s_CapPool.Push(cap); }
-
-        private static VisualElement GetCap()
-        {
-            VisualElement result;
-            if (s_CapPool.Count > 0) { result = s_CapPool.Pop(); }
-            else
-            {
-                result = new();
-                result.AddToClassList("edge-cap");
-            }
-
-            return result;
-        }
-
+        #region Rendering
         private void UpdateEdgeCaps()
         {
             if (m_FromCap != null)
@@ -534,7 +526,7 @@ namespace GraphViewPlayer
             float d = new Vector2(segment, radius).magnitude;
             float factor = d / L;
 
-            return new(cornerPoint.x - cornerToCenterVector.x * factor,
+            return new(cornerPoint.x - cornerToCenterVector.x * factor, 
                 cornerPoint.y - cornerToCenterVector.y * factor);
         }
 
@@ -701,17 +693,7 @@ namespace GraphViewPlayer
 
             painter2D.Stroke();
         }
-
-        private struct EdgeCornerSweepValues
-        {
-            public Vector2 circleCenter;
-            public double sweepAngle;
-            public double startAngle;
-            public double endAngle;
-            public Vector2 crossPoint1;
-            public Vector2 crossPoint2;
-            public float radius;
-        }
+        #endregion
 
         #region Intersection
         public override bool ContainsPoint(Vector2 localPoint)
@@ -799,10 +781,6 @@ namespace GraphViewPlayer
                 ColorSelected = selectColorValue;
             }
             if (styles.TryGetValue(s_EdgeColorProperty, out Color edgeColorValue)) { ColorUnselected = edgeColorValue; }
-            if (styles.TryGetValue(s_EdgeColorGhostProperty, out Color ghostColorValue))
-            {
-                ColorGhost = ghostColorValue;
-            }
         }
 
         protected override void OnAddedToGraphView()
@@ -826,6 +804,19 @@ namespace GraphViewPlayer
             DrawToCap = Input == null;
             m_ControlPointsDirty = true;
             UpdateLayout();
+        }
+        #endregion
+        
+        #region Helper Classes/Structs
+        private struct EdgeCornerSweepValues
+        {
+            public Vector2 circleCenter;
+            public double sweepAngle;
+            public double startAngle;
+            public double endAngle;
+            public Vector2 crossPoint1;
+            public Vector2 crossPoint2;
+            public float radius;
         }
         #endregion
 

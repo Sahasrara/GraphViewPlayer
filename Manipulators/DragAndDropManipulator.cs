@@ -11,7 +11,7 @@ namespace GraphViewPlayer
         private bool m_BreachedDragThreshold;
         private VisualElement m_Dragged;
 
-        private int m_DragThreshold;
+        private float m_DragThreshold;
         private bool m_MouseDown;
         private Vector2 m_MouseOrigin;
         private VisualElement m_PreviousDropTarget;
@@ -370,7 +370,7 @@ namespace GraphViewPlayer
     {
         protected bool m_Cancelled;
         protected Vector2 m_DeltaToOrigin;
-        protected int m_DragThreshold;
+        protected float m_DragThreshold;
         internal DragAndDropManipulator ParentManipulator { get; set; }
 
         public Vector2 DeltaToDragOrigin
@@ -379,9 +379,9 @@ namespace GraphViewPlayer
             internal set => m_DeltaToOrigin = value;
         }
 
-        internal VisualElement GetDraggedElement() => ParentManipulator.GetDraggedElement();
-        internal int GetDragThreshold() => m_DragThreshold;
+        internal float GetDragThreshold() => m_DragThreshold;
         internal void SetMouseDelta(Vector2 delta) => mouseDelta = delta;
+        public VisualElement GetDraggedElement() => ParentManipulator.GetDraggedElement();
         public bool IsCancelled() => m_Cancelled;
         public void CancelDrag() => m_Cancelled = true;
         public object GetUserData() => ParentManipulator.GetUserData();
@@ -402,7 +402,20 @@ namespace GraphViewPlayer
 
     public class DragOfferEvent : DragEventBase<DragOfferEvent>
     {
-        public void SetDragThreshold(int threshold) => m_DragThreshold = threshold;
+        public static DragOfferEvent GetPooled(DragOfferEvent e)
+        {
+            DragOfferEvent newEvent = MouseEventBase<DragOfferEvent>.GetPooled(e);
+            if (newEvent != null)
+            {
+                newEvent.ParentManipulator = e.ParentManipulator;
+                newEvent.m_DeltaToOrigin = e.m_DeltaToOrigin;
+                newEvent.m_DragThreshold = e.m_DragThreshold;
+                newEvent.m_Cancelled = e.m_Cancelled;
+            }
+            return newEvent;
+        }
+        
+        public void SetDragThreshold(float threshold) => m_DragThreshold = threshold;
 
         public void AcceptDrag(VisualElement draggedElement) { ParentManipulator.SetDraggedElement(draggedElement); }
 

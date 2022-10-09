@@ -9,14 +9,14 @@ namespace GraphViewPlayer
     /// ContentView houses all graph elements and is the element directly scaled/panned by the GraphView.
     /// ContentView also handles selection based drag and drop for all GraphElements.
     /// </summary>
-    internal class ContentView : VisualElement, ISelector, IPositionable, IDropPayload
+    internal class GraphElementContainer : VisualElement, ISelector, IPositionable, IDropPayload
     {
         private readonly List<GraphElement> m_Selection;
         
         private GraphView m_GraphView;
         private GraphElement m_Dragged;
         
-        public ContentView(GraphView graphView)
+        public GraphElementContainer(GraphView graphView)
         {
             AddToClassList("content-view-container");
             pickingMode = PickingMode.Ignore;

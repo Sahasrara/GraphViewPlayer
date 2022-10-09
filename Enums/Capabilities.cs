@@ -22,10 +22,4 @@ namespace GraphViewPlayer
         Groupable = 1 << 10,
         Stackable = 1 << 11
     }
-
-    internal enum ResizeRestriction
-    {
-        None,
-        FlexDirection
-    }
 }

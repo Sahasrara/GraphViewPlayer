@@ -26,7 +26,7 @@ namespace GraphViewPlayer
 
         private readonly Dictionary<int, Layer> m_ContainerLayers;
         private readonly VisualElement m_GridBackground;
-        
+
         #region Constructor
         protected GraphView()
         {
@@ -79,6 +79,13 @@ namespace GraphViewPlayer
         }
         #endregion
 
+        #region Helper Classes
+        public class Layer : VisualElement
+        {
+            public Layer() => pickingMode = PickingMode.Ignore;
+        }
+        #endregion
+
         #region Properties
         private static StyleSheet DefaultStyle
         {
@@ -94,7 +101,7 @@ namespace GraphViewPlayer
 
         internal ViewTransformChanged OnViewTransformChanged { get; set; }
 
-        internal ContentView ContentContainer { get; }
+        internal GraphElementContainer ContentContainer { get; }
         internal ITransform ViewTransform => ContentContainer.transform;
         #endregion
 
@@ -336,12 +343,14 @@ namespace GraphViewPlayer
             if (m_DraggingMarquee)
             {
                 e.StopImmediatePropagation();
+
                 // TODO - MouseMoveEvent doesn't correctly report mouse button so I don't check IsMarqueeDrag 
                 m_Marquee.End = this.WorldToLocal(e.mousePosition);
             }
             else if (m_DraggingView)
             {
                 e.StopImmediatePropagation();
+
                 // TODO - MouseMoveEvent doesn't correctly report mouse button so I don't check IsViewDrag 
                 UpdateViewTransform(ViewTransform.position + (Vector3)e.mouseDelta);
             }
@@ -396,7 +405,8 @@ namespace GraphViewPlayer
 
         private void OnDropEnter(DropEnterEvent e)
         {
-            if (e.GetUserData() is IDropPayload dropPayload && typeof(BaseEdge).IsAssignableFrom(dropPayload.GetPayloadType()))
+            if (e.GetUserData() is IDropPayload dropPayload &&
+                typeof(BaseEdge).IsAssignableFrom(dropPayload.GetPayloadType()))
             {
                 // Consume event
                 e.StopImmediatePropagation();
@@ -405,17 +415,18 @@ namespace GraphViewPlayer
 
         private void OnDrop(DropEvent e)
         {
-            if (e.GetUserData() is IDropPayload dropPayload && typeof(BaseEdge).IsAssignableFrom(dropPayload.GetPayloadType()))
+            if (e.GetUserData() is IDropPayload dropPayload &&
+                typeof(BaseEdge).IsAssignableFrom(dropPayload.GetPayloadType()))
             {
                 // Consume event
                 e.StopImmediatePropagation();
-                
+
                 // Delete edges 
                 for (int i = dropPayload.GetPayload().Count - 1; i >= 0; i--)
                 {
                     // Grab the edge
                     BaseEdge edge = (BaseEdge)dropPayload.GetPayload()[i];
-                    
+
                     // Delete real edge
                     if (edge.IsRealEdge()) { ExecuteEdgeDelete(edge); }
 
@@ -427,7 +438,8 @@ namespace GraphViewPlayer
 
         private void OnDropExit(DropExitEvent e)
         {
-            if (e.GetUserData() is IDropPayload dropPayload && typeof(BaseEdge).IsAssignableFrom(dropPayload.GetPayloadType()))
+            if (e.GetUserData() is IDropPayload dropPayload &&
+                typeof(BaseEdge).IsAssignableFrom(dropPayload.GetPayloadType()))
             {
                 // Consume event
                 e.StopImmediatePropagation();
@@ -641,7 +653,10 @@ namespace GraphViewPlayer
 
         internal void IlluminateCompatiblePorts(BasePort port)
         {
-            foreach (BasePort otherPort in ContentContainer.Ports) { otherPort.Highlight = port.CanConnectTo(otherPort); }
+            foreach (BasePort otherPort in ContentContainer.Ports)
+            {
+                otherPort.Highlight = port.CanConnectTo(otherPort);
+            }
         }
 
         internal void IlluminateAllPorts()
@@ -773,13 +788,6 @@ namespace GraphViewPlayer
         protected internal abstract void ExecuteEdgeDelete(BaseEdge edge);
         protected internal abstract void OnNodeMoved(BaseNode node);
         protected internal abstract void OnViewportChanged();
-        #endregion
-
-        #region Helper Classes
-        public class Layer : VisualElement
-        {
-            public Layer() => pickingMode = PickingMode.Ignore;
-        }
         #endregion
     }
 }

@@ -252,40 +252,40 @@ namespace GraphViewPlayer
 
         public float MinScale
         {
-            get => m_Zoomer.minScale;
+            get => m_Zoomer.MinScale;
             set
             {
-                m_Zoomer.minScale = Math.Min(value, ZoomManipulator.DefaultMinScale);
+                m_Zoomer.MinScale = Math.Min(value, ZoomManipulator.DefaultMinScale);
                 ValidateTransform();
             }
         }
 
         public float MaxScale
         {
-            get => m_Zoomer.maxScale;
+            get => m_Zoomer.MaxScale;
             set
             {
-                m_Zoomer.maxScale = Math.Max(value, ZoomManipulator.DefaultMaxScale);
+                m_Zoomer.MaxScale = Math.Max(value, ZoomManipulator.DefaultMaxScale);
                 ValidateTransform();
             }
         }
 
         public float ScaleStep
         {
-            get => m_Zoomer.scaleStep;
+            get => m_Zoomer.ScaleStep;
             set
             {
-                m_Zoomer.scaleStep = Math.Min(value, (MaxScale - MinScale) / 2);
+                m_Zoomer.ScaleStep = Math.Min(value, (MaxScale - MinScale) / 2);
                 ValidateTransform();
             }
         }
 
         public float ReferenceScale
         {
-            get => m_Zoomer.referenceScale;
+            get => m_Zoomer.ReferenceScale;
             set
             {
-                m_Zoomer.referenceScale = Math.Clamp(value, MinScale, MaxScale);
+                m_Zoomer.ReferenceScale = Math.Clamp(value, MinScale, MaxScale);
                 ValidateTransform();
             }
         }
@@ -488,6 +488,9 @@ namespace GraphViewPlayer
                     // Delete candidate edge
                     else { RemoveElement(edge); }
                 }
+
+                // BaseEdge.OnDragEnd won't be called and everything else is cleaned up by RemoveElement
+                draggedEdge.DraggedEdges.Clear(); // TODO: Hack
 
                 // Reset port highlights
                 IlluminateAllPorts();

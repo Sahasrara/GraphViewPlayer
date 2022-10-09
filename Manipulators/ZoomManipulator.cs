@@ -18,9 +18,9 @@ namespace GraphViewPlayer
         /// <summary>
         ///     Scale that should be computed when scroll wheel offset is at zero.
         /// </summary>
-        public float referenceScale { get; set; } = DefaultReferenceScale;
-        public float minScale { get; set; } = DefaultMinScale;
-        public float maxScale { get; set; } = DefaultMaxScale;
+        public float ReferenceScale { get; set; } = DefaultReferenceScale;
+        public float MinScale { get; set; } = DefaultMinScale;
+        public float MaxScale { get; set; } = DefaultMaxScale;
 
         /// <summary>
         ///     Relative scale change when zooming in/out (e.g. For 15%, use 0.15).
@@ -29,7 +29,7 @@ namespace GraphViewPlayer
         ///     Depending on the values of <c>minScale</c>, <c>maxScale</c> and <c>scaleStep</c>, it is not guaranteed that
         ///     the first and last two scale steps will correspond exactly to the value specified in <c>scaleStep</c>.
         /// </remarks>
-        public float scaleStep { get; set; } = DefaultScaleStep;
+        public float ScaleStep { get; set; } = DefaultScaleStep;
 
         protected override void RegisterCallbacksOnTarget()
         {
@@ -136,7 +136,7 @@ namespace GraphViewPlayer
             position += Vector3.Scale(new(x, y, 0), scale);
 
             // Apply the new zoom.
-            float zoom = CalculateNewZoom(scale.y, -evt.delta.y, scaleStep, referenceScale, minScale, maxScale);
+            float zoom = CalculateNewZoom(scale.y, -evt.delta.y, ScaleStep, ReferenceScale, MinScale, MaxScale);
             scale.x = zoom;
             scale.y = zoom;
             scale.z = 1;

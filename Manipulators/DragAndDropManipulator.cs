@@ -8,16 +8,16 @@ namespace GraphViewPlayer
     public class DragAndDropManipulator : Manipulator
     {
         private readonly List<VisualElement> m_PickList;
-        
+        private bool m_BreachedDragThreshold;
+        private VisualElement m_Dragged;
+
         private int m_DragThreshold;
         private bool m_MouseDown;
-        private bool m_BreachedDragThreshold;
-        private object m_UserData;
         private Vector2 m_MouseOrigin;
-        private Vector2 m_PreviousMousePosition;
-        private VisualElement m_Dragged;
         private VisualElement m_PreviousDropTarget;
-        
+        private Vector2 m_PreviousMousePosition;
+        private object m_UserData;
+
         #region Constructor
         public DragAndDropManipulator() => m_PickList = new();
         #endregion
@@ -49,7 +49,7 @@ namespace GraphViewPlayer
                 CancelDrag(e);
                 return;
             }
-            
+
             // Create event
             m_MouseDown = true;
             m_MouseOrigin = e.mousePosition;
@@ -57,40 +57,37 @@ namespace GraphViewPlayer
             {
                 // Set parent
                 dragOfferEvent.ParentManipulator = this;
-                
+
                 // Set correct drag delta
                 dragOfferEvent.SetMouseDelta(Vector2.zero);
-                
+
                 // Send event
                 target.SendEvent(dragOfferEvent);
             }
-            
+
             // Record mouse position
             m_PreviousMousePosition = e.mousePosition;
         }
-        
-        internal void OnDragBeginComplete(DragOfferEvent dragOfferEvent)
+
+        internal void OnDragOfferComplete(DragOfferEvent dragOfferEvent)
         {
             // Check for cancel request or nobody accepting the event
-            if (dragOfferEvent.IsCancelled() || m_Dragged == null || m_Dragged.parent == null)
-            {
-                Reset();
-            }
+            if (dragOfferEvent.IsCancelled() || m_Dragged == null || m_Dragged.parent == null) { Reset(); }
             else
             {
                 // Capture any threshold requests
                 m_DragThreshold = dragOfferEvent.GetDragThreshold();
-                        
+
                 // Capturing ensures we retain the mouse events even if the mouse leaves the target.
                 target.CaptureMouse();
             }
         }
-        
+
         private void OnMouseMove(MouseMoveEvent e)
         {
             // If the mouse isn't down, bail
             if (!m_MouseDown) { return; }
-            
+
             // Check if dragged is still in the hierarchy
             if (m_Dragged.parent == null)
             {
@@ -108,23 +105,23 @@ namespace GraphViewPlayer
                     // Not time yet to start dragging
                     return;
                 }
-                
+
                 // Drag begin 
                 using (DragBeginEvent dragBeginEvent = DragBeginEvent.GetPooled(e))
                 {
                     // Set parent
                     dragBeginEvent.ParentManipulator = this;
-                
+
                     // Set target
                     dragBeginEvent.target = m_Dragged;
-                    
+
                     // Send event
-                    target.SendEvent(dragBeginEvent); 
+                    target.SendEvent(dragBeginEvent);
                 }
-                
+
                 // We are starting a drag!
                 m_BreachedDragThreshold = true;
-                
+
                 // Sending drag event after drag begin so we can check for cancellation 
                 return;
             }
@@ -140,32 +137,32 @@ namespace GraphViewPlayer
             {
                 CancelDrag(dragBeginEvent);
                 return;
-            } 
+            }
 
             // No cancellation, send drag event
             SendDragEvent(dragBeginEvent);
         }
 
-        private void SendDragEvent<T>(MouseEventBase<T> e) where T : MouseEventBase<T>, new() 
+        private void SendDragEvent<T>(MouseEventBase<T> e) where T : MouseEventBase<T>, new()
         {
             // We breached the threshold, time to drag
             using (DragEvent dragEvent = DragEvent.GetPooled(e))
             {
                 // Set parent
                 dragEvent.ParentManipulator = this;
-                
+
                 // Set target
                 dragEvent.target = m_Dragged;
-                
+
                 // Set correct drag delta
                 dragEvent.SetMouseDelta(e.mousePosition - m_PreviousMousePosition);
-                
+
                 // Send event
                 target.SendEvent(dragEvent);
             }
-            
+
             // Record mouse position
-            m_PreviousMousePosition = e.mousePosition; 
+            m_PreviousMousePosition = e.mousePosition;
         }
 
         internal void OnDragComplete(DragEvent dragEvent)
@@ -175,25 +172,25 @@ namespace GraphViewPlayer
             {
                 CancelDrag(dragEvent);
                 return;
-            } 
-            
+            }
+
             // Look for droppable
             VisualElement pick = PickFirstExcluding(dragEvent.mousePosition, m_Dragged);
-            if (pick == m_PreviousDropTarget) return;
-            
+            if (pick == m_PreviousDropTarget) { return; }
+
             // Check if we need to fire an exit event
-            AttemptDropExit(dragEvent); 
-            
+            AttemptDropExit(dragEvent);
+
             // Record new pick
             m_PreviousDropTarget = pick;
-            if (pick == null) return;
-            
+            if (pick == null) { return; }
+
             // Send drop enter event
             using (DropEnterEvent dropEnterEvent = DropEnterEvent.GetPooled(dragEvent))
             {
                 // Set parent
                 dropEnterEvent.ParentManipulator = this;
-                
+
                 // Set target
                 dropEnterEvent.target = pick;
 
@@ -207,36 +204,36 @@ namespace GraphViewPlayer
         private void OnMouseUp(MouseUpEvent e)
         {
             // If the mouse isn't down or we're not dragging
-            if (!m_MouseDown) { return; } 
-            
+            if (!m_MouseDown) { return; }
+
             // Make sure the dragged element still exists 
             if (m_Dragged.parent == null)
             {
                 CancelDrag(e);
                 return;
-            } 
-            
+            }
+
             // Send drop event
             using (DropEvent dropEvent = DropEvent.GetPooled(e))
             {
                 // Set parent
                 dropEvent.ParentManipulator = this;
-                
+
                 // Check if we skipped the drop
                 if (m_PreviousDropTarget == null)
                 {
                     OnDropComplete(dropEvent);
                     return;
                 }
-                
+
                 // Set target 
                 dropEvent.target = m_PreviousDropTarget;
-                
+
                 // Send drop event
                 target.SendEvent(dropEvent);
             }
         }
-        
+
         internal void OnDropComplete(DropEvent dropEvent)
         {
             // Check if cancelled
@@ -245,30 +242,30 @@ namespace GraphViewPlayer
                 CancelDrag(dropEvent);
                 return;
             }
-            
+
             // Complete drag
             using (DragEndEvent dragEndEvent = DragEndEvent.GetPooled(dropEvent))
             {
                 // Set parent
                 dragEndEvent.ParentManipulator = this;
-                
+
                 // Set target
                 dragEndEvent.target = m_Dragged;
-                
+
                 // Set delta to a value that would reset the drag 
                 dragEndEvent.DeltaToDragOrigin = m_MouseOrigin - dragEndEvent.mousePosition;
-                
+
                 // Send event
                 target.SendEvent(dragEndEvent);
-            } 
+            }
         }
 
         internal void OnDragEndComplete(DragEndEvent dragEndEvent)
         {
             // Reset everything
-            Reset(); 
+            Reset();
         }
-        
+
         private void CancelDrag(EventBase e)
         {
             if (m_BreachedDragThreshold)
@@ -277,29 +274,26 @@ namespace GraphViewPlayer
                 {
                     // Set parent
                     dragCancelEvent.ParentManipulator = this;
-                    
+
                     // Set target
                     dragCancelEvent.target = m_Dragged;
-                    
+
                     // Set mouse delta to a value that would reset the drag 
                     dragCancelEvent.DeltaToDragOrigin = m_MouseOrigin - m_PreviousMousePosition;
-                    
+
                     // Send cancel event
                     target.SendEvent(dragCancelEvent);
-                    
+
                     // Check for drag exit
                     AttemptDropExit(dragCancelEvent);
                 }
             }
-            else Reset();
+            else { Reset(); }
         }
 
-        internal void OnDragCancelComplete(DragCancelEvent dragCancelEvent)
-        {
-            Reset();
-        }
-        
-        private void AttemptDropExit<T>(MouseEventBase<T> e) where T : MouseEventBase<T>, new() 
+        internal void OnDragCancelComplete(DragCancelEvent dragCancelEvent) { Reset(); }
+
+        private void AttemptDropExit<T>(MouseEventBase<T> e) where T : MouseEventBase<T>, new()
         {
             if (m_PreviousDropTarget != null)
             {
@@ -307,16 +301,16 @@ namespace GraphViewPlayer
                 {
                     // Set parent
                     dropExitEvent.ParentManipulator = this;
-                
+
                     // Set target
                     dropExitEvent.target = m_PreviousDropTarget;
-                    
+
                     // Send event
                     target.SendEvent(dropExitEvent);
-                } 
+                }
             }
         }
-        
+
         internal void OnDropExitComplete(DropExitEvent dropExitEvent) { }
 
         private void OnMouseCaptureOutEvent(MouseCaptureOutEvent e)
@@ -354,7 +348,7 @@ namespace GraphViewPlayer
             }
             m_PickList.Clear();
             return toFind;
-        } 
+        }
 
         private void Reset()
         {
@@ -370,26 +364,27 @@ namespace GraphViewPlayer
         }
         #endregion
     }
-    
+
     #region Events
     public abstract class DragAndDropEvent<T> : MouseEventBase<T> where T : DragAndDropEvent<T>, new()
     {
-        protected int m_DragThreshold;
         protected bool m_Cancelled;
         protected Vector2 m_DeltaToOrigin;
+        protected int m_DragThreshold;
         internal DragAndDropManipulator ParentManipulator { get; set; }
-        internal VisualElement GetDraggedElement() => ParentManipulator.GetDraggedElement(); 
-        internal int GetDragThreshold() => m_DragThreshold;
-        internal void SetMouseDelta(Vector2 delta) => mouseDelta = delta;
-        public bool IsCancelled() => m_Cancelled;
-        public void CancelDrag() => m_Cancelled = true;
-        public object GetUserData() => ParentManipulator.GetUserData();
 
         public Vector2 DeltaToDragOrigin
         {
             get => m_DeltaToOrigin;
             internal set => m_DeltaToOrigin = value;
-        } 
+        }
+
+        internal VisualElement GetDraggedElement() => ParentManipulator.GetDraggedElement();
+        internal int GetDragThreshold() => m_DragThreshold;
+        internal void SetMouseDelta(Vector2 delta) => mouseDelta = delta;
+        public bool IsCancelled() => m_Cancelled;
+        public void CancelDrag() => m_Cancelled = true;
+        public object GetUserData() => ParentManipulator.GetUserData();
 
         protected override void Init()
         {
@@ -399,7 +394,7 @@ namespace GraphViewPlayer
             m_Cancelled = false;
         }
     }
-    
+
     public abstract class DragEventBase<T> : DragAndDropEvent<T> where T : DragEventBase<T>, new()
     {
         public void SetUserData(object data) => ParentManipulator.SetUserData(data);
@@ -409,15 +404,12 @@ namespace GraphViewPlayer
     {
         public void SetDragThreshold(int threshold) => m_DragThreshold = threshold;
 
-        public void AcceptDrag(VisualElement draggedElement)
-        {
-            ParentManipulator.SetDraggedElement(draggedElement);
-        }
-        
+        public void AcceptDrag(VisualElement draggedElement) { ParentManipulator.SetDraggedElement(draggedElement); }
+
         protected override void PostDispatch(IPanel panel)
         {
             base.PostDispatch(panel);
-            ParentManipulator.OnDragBeginComplete(this);
+            ParentManipulator.OnDragOfferComplete(this);
         }
     }
 
@@ -427,7 +419,7 @@ namespace GraphViewPlayer
         {
             base.PostDispatch(panel);
             ParentManipulator.OnDragBeginComplete(this);
-        } 
+        }
     }
 
     public class DragEvent : DragEventBase<DragEvent>

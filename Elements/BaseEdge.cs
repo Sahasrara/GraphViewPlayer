@@ -309,7 +309,7 @@ namespace GraphViewPlayer
             // Collect dragged edges and set their overrides TODO: (that's how we signal the drag right now)
             if (draggedInput)
             {
-                CollectDraggedEdges(Input);
+                CollectDraggedEdges(DraggedEdges, Input);
                 for (int i = 0; i < DraggedEdges.Count; i++)
                 {
                     BaseEdge edge = DraggedEdges[i];
@@ -320,7 +320,7 @@ namespace GraphViewPlayer
             }
             else
             {
-                CollectDraggedEdges(Output);
+                CollectDraggedEdges(DraggedEdges, Output);
                 for (int i = 0; i < DraggedEdges.Count; i++)
                 {
                     BaseEdge edge = DraggedEdges[i];
@@ -353,6 +353,7 @@ namespace GraphViewPlayer
             }
         }
 
+        // TODO: this won't necessary be called if the Edge is being deleted. See hack in GraphView.OnDrop()
         private void OnDragEnd(DragEndEvent e)
         {
             // Reset picking mode
@@ -363,8 +364,7 @@ namespace GraphViewPlayer
             }
 
             // Clear dragged edges
-            DraggedEdges
-                .Clear(); // TODO - this is "leaky" because it's never called when this element is deleted during a drag
+            DraggedEdges.Clear();
 
             // Could have been deleted
             if (Graph == null) { return; }
@@ -426,17 +426,17 @@ namespace GraphViewPlayer
             return true;
         }
 
-        private void CollectDraggedEdges(BasePort draggedPort)
+        private void CollectDraggedEdges(List<BaseEdge> edges, BasePort draggedPort)
         {
             // Grab dragged edges
             if (draggedPort != null && draggedPort.allowMultiDrag)
             {
                 foreach (BaseEdge edge in draggedPort.Connections)
                 {
-                    if (edge.Selected) { DraggedEdges.Add(edge); }
+                    if (edge.Selected) { edges.Add(edge); }
                 }
             }
-            else { DraggedEdges.Add(this); }
+            else { edges.Add(this); }
         }
         #endregion
     }

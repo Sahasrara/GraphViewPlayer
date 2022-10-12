@@ -1,5 +1,3 @@
 # Skip .meta and .DS_Store
 *.meta
 .DS_Store
-
-

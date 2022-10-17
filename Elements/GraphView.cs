@@ -101,7 +101,7 @@ namespace GraphViewPlayer
 
         internal ViewTransformChanged OnViewTransformChanged { get; set; }
 
-        internal GraphElementContainer ContentContainer { get; }
+        protected internal GraphElementContainer ContentContainer { get; }
         internal ITransform ViewTransform => ContentContainer.transform;
         #endregion
 
@@ -786,7 +786,6 @@ namespace GraphViewPlayer
         protected internal abstract void ExecuteRedo();
         protected internal abstract void ExecuteEdgeCreate(BaseEdge edge);
         protected internal abstract void ExecuteEdgeDelete(BaseEdge edge);
-        protected internal abstract void OnNodeMoved(BaseNode node);
         protected internal abstract void OnViewportChanged();
         #endregion
     }

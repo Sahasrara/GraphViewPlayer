@@ -98,14 +98,6 @@ namespace GraphViewPlayer
         }
         #endregion
 
-        #region Position
-        public override void SetPosition(Vector2 newPosition)
-        {
-            base.SetPosition(newPosition);
-            Graph?.OnNodeMoved(this);
-        }
-        #endregion
-
         #region Drag Events
         [EventInterest(typeof(DragOfferEvent))]
         protected override void ExecuteDefaultActionAtTarget(EventBase evt)

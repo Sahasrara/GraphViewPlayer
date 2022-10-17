@@ -9,7 +9,7 @@ namespace GraphViewPlayer
     /// ContentView houses all graph elements and is the element directly scaled/panned by the GraphView.
     /// ContentView also handles selection based drag and drop for all GraphElements.
     /// </summary>
-    internal class GraphElementContainer : VisualElement, ISelector, IPositionable, IDropPayload
+    public class GraphElementContainer : VisualElement, ISelector, IPositionable, IDropPayload
     {
         private readonly List<GraphElement> m_Selection;
         
@@ -372,7 +372,7 @@ namespace GraphViewPlayer
         public IReadOnlyList<GraphElement> GetPayload() => m_Selection;
         #endregion
     }
-
+    
     public interface IDropPayload
     {
         public Type GetPayloadType();

@@ -1,0 +1,19 @@
+{
+    "name": "com.graphviewplayer",
+    "version": "1.0.0",
+    "displayName": "Graph View Player",
+    "description": "Refactor of the built-in Graph View supporting runtime editor",
+    "unity" : "2022.2",
+    "dependencies": {
+
+    },
+    "keywords": [
+        "Graph View",
+        "Node Editor",
+        "Tool"
+    ],
+    "author": {
+        "name": "Sahasrara",
+        "url": "https://github.com/Sahasrara"
+    }
+}
